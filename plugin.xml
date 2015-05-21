@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin id="akofman.cordovapluginboilerplate" version="0.1.0" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
-  <name>cordova-plugin-boilerplate</name>
-  <js-module name="cordova-plugin-boilerplate" src="www/cordova-plugin-boilerplate.js">
-    <clobbers target="cordova.plugins.cordova-plugin-boilerplate" />
+<plugin id="your.plugin.id" version="0.1.0" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
+  <name>cordova-plugin-yourPluginName</name>
+  <js-module name="cordova-plugin-yourPluginName" src="www/yourPluginName.js">
+    <clobbers target="cordova.plugins.cordova-plugin-yourPluginName" />
   </js-module>
   <platform name="ios">
     <config-file parent="/*" target="config.xml">
-      <feature name="cordova-plugin-boilerplate">
-        <param name="ios-package" value="cordova-plugin-boilerplate" />
+      <feature name="cordova-plugin-yourPluginName">
+        <param name="ios-package" value="yourPluginName" />
       </feature>
     </config-file>
-    <source-file src="src/ios/cordova-plugin-boilerplate.m" />
+    <source-file src="src/ios/yourPluginName.m" />
   </platform>
   <platform name="android">
     <config-file parent="/*" target="res/xml/config.xml">
-      <feature name="cordova-plugin-boilerplate">
-        <param name="android-package" value="akofman.boilerplate.cordova-plugin-boilerplate" />
+      <feature name="cordova-plugin-yourPluginName">
+        <param name="android-package" value="your.plugin.name" />
       </feature>
     </config-file>
     <config-file parent="/*" target="AndroidManifest.xml">
     </config-file>
-    <source-file src="src/android/cordova-plugin-boilerplate.java" target-dir="src/akofman/boilerplate/cordova-plugin-boilerplate" />
+    <source-file src="src/android/YourPluginName.java" target-dir="src/your/plugin/name" />
   </platform>
 </plugin>

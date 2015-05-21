@@ -1,15 +1,15 @@
-/********* cordova-plugin-boilerplate.m Cordova Plugin Implementation *******/
+/********* YourPluginName.m Cordova Plugin Implementation *******/
 
 #import <Cordova/CDV.h>
 
-@interface cordova-plugin-boilerplate : CDVPlugin {
+@interface YourPluginName : CDVPlugin {
   // Member variables go here.
 }
 
 - (void)coolMethod:(CDVInvokedUrlCommand*)command;
 @end
 
-@implementation cordova-plugin-boilerplate
+@implementation YourPluginName
 
 - (void)coolMethod:(CDVInvokedUrlCommand*)command
 {
