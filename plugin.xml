@@ -1,25 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin id="your.plugin.id" version="0.1.0" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
+<plugin id="your.name.space.yourPluginName" version="0.1.0" xmlns="http://apache.org/cordova/ns/plugins/1.0">
   <name>cordova-plugin-yourPluginName</name>
-  <js-module name="cordova-plugin-yourPluginName" src="www/yourPluginName.js">
-    <clobbers target="cordova.plugins.cordova-plugin-yourPluginName" />
+  <js-module name="yourPluginName" src="www/yourPluginName.js">
+    <clobbers target="yourPluginName" />
   </js-module>
   <platform name="ios">
+    <hook type="after_plugin_install" src="hooks/add_swift_support.js" />
     <config-file parent="/*" target="config.xml">
-      <feature name="cordova-plugin-yourPluginName">
-        <param name="ios-package" value="yourPluginName" />
+      <feature name="YourPluginName">
+        <param name="ios-package" value="YourPluginNamePlugin" />
       </feature>
     </config-file>
-    <source-file src="src/ios/yourPluginName.m" />
-  </platform>
-  <platform name="android">
-    <config-file parent="/*" target="res/xml/config.xml">
-      <feature name="cordova-plugin-yourPluginName">
-        <param name="android-package" value="your.plugin.name" />
-      </feature>
-    </config-file>
-    <config-file parent="/*" target="AndroidManifest.xml">
-    </config-file>
-    <source-file src="src/android/YourPluginName.java" target-dir="src/your/plugin/name" />
+    <source-file src="src/ios/yourPluginNamePlugin.swift" />
   </platform>
 </plugin>
