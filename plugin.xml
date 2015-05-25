@@ -2,7 +2,7 @@
 <plugin id="your.name.space.yourPluginName" version="0.1.0" xmlns="http://apache.org/cordova/ns/plugins/1.0">
   <name>cordova-plugin-yourPluginName</name>
   <js-module name="yourPluginName" src="www/yourPluginName.js">
-    <clobbers target="yourPluginName" />
+    <clobbers target="cordova.plugins.yourPluginName" />
   </js-module>
   <platform name="ios">
     <hook type="after_plugin_install" src="hooks/add_swift_support.js" />
