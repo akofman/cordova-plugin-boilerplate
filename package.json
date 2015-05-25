@@ -1,0 +1,22 @@
+{
+  "name": "your.name.space.yourPluginName",
+  "version": "0.0.1-dev",
+  "description": "Cordova Sample Plugin",
+  "cordova": {
+    "id": "your.name.space.yourPluginName",
+    "platforms": [
+      "ios"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akofman/cordova-plugin-boilerplate"
+  },
+  "keywords": [
+    "cordova",
+    "ecosystem:cordova",
+    "cordova-ios"
+  ],
+  "author": "Alexis Kofman",
+  "license": "MIT"
+}
