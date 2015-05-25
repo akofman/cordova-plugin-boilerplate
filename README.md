@@ -7,6 +7,8 @@ iOS Cordova plugin boilerplate written in Swift.
 ```sh
 $ mkdir myNewPluginProject && cd myNewPluginProject
 $ git clone https://github.com/akofman/cordova-plugin-boilerplate.git .
+$ git remote remove origin
+$ git remote add origin yourgitrepourl.git
 ```
 
 Now you can code :)
