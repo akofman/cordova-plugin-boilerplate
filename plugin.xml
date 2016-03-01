@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin id="your.name.space.swiftVideo" version="0.1.0" xmlns="http://apache.org/cordova/ns/plugins/1.0">
+  <name>cordova-plugin-swiftVideo</name>
+  <js-module name="swiftVideo" src="www/swiftVideo.js">
+    <clobbers target="cordova.plugins.swiftVideo" />
+  </js-module>
+  <platform name="ios">
+    <hook type="after_plugin_install" src="hooks/add_swift_support.js" />
+    <config-file parent="/*" target="config.xml">
+      <feature name="SwiftVideo">
+        <param name="ios-package" value="SwiftVideoPlugin" />
+      </feature>
+    </config-file>
+    <source-file src="src/ios/swiftVideoPlugin.swift" />
+  </platform>
+</plugin>
