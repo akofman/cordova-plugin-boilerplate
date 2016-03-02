@@ -5,12 +5,12 @@
     <clobbers target="cordova.plugins.yourPluginName" />
   </js-module>
   <platform name="ios">
-    <hook type="after_plugin_install" src="hooks/add_swift_support.js" />
     <config-file parent="/*" target="config.xml">
       <feature name="YourPluginName">
         <param name="ios-package" value="YourPluginNamePlugin" />
       </feature>
     </config-file>
     <source-file src="src/ios/yourPluginNamePlugin.swift" />
+    <dependency id="cordova-plugin-add-swift-support" url="https://github.com/akofman/cordova-plugin-add-swift-support"/>
   </platform>
 </plugin>
