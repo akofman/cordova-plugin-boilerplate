@@ -1,16 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin id="your.name.space.yourPluginName" version="0.1.0" xmlns="http://apache.org/cordova/ns/plugins/1.0">
-  <name>cordova-plugin-yourPluginName</name>
-  <js-module name="yourPluginName" src="www/yourPluginName.js">
-    <clobbers target="cordova.plugins.yourPluginName" />
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  id="cordova-plugin-pluginname"
+  version="0.1.0-dev">
+  <name>PluginName</name>
+  <license>Apache 2.0</license>
+  <description>Cordova plugin</description>
+  <keywords>cordova,phonegap</keywords>
+
+  <js-module name="PluginName" src="pluginName.js">
+    <clobbers target="PluginName" />
   </js-module>
-  <platform name="ios">
-    <config-file parent="/*" target="config.xml">
-      <feature name="YourPluginName">
-        <param name="ios-package" value="YourPluginNamePlugin" />
+
+  <platform name="android">
+    <config-file target="AndroidManifest.xml" parent="/*">
+      <!-- Permissions can be configured from here -->
+      <!-- <uses-permission android:name="android.permission.RECORD_AUDIO" /> -->
+    </config-file>
+
+    <config-file target="res/xml/config.xml" parent="/*">
+      <feature name="PluginName">
+        <param name="android-package" value="org.apache.cordova.pluginname.PluginName"/>
       </feature>
     </config-file>
-    <source-file src="src/ios/yourPluginNamePlugin.swift" />
+
+    <source-file src="src/android/PluginName.java" target-dir="src/org/apache/cordova/pluginname" />
+
+    <!-- In order to keep permission compatibility you can uncomment this dependency -->
+    <!-- <dependency id="cordova-plugin-compat" url="https://github.com/macdonst/cordova-plugin-compat"/> -->
+  </platform>
+
+  <platform name="ios">
+    <config-file target="config.xml" parent="/*">
+      <feature name="PluginName">
+        <param name="ios-package" value="PluginName" />
+      </feature>
+    </config-file>
+
+    <source-file src="src/ios/PluginName.swift" />
+
     <dependency id="cordova-plugin-add-swift-support" url="https://github.com/akofman/cordova-plugin-add-swift-support"/>
   </platform>
+
 </plugin>
