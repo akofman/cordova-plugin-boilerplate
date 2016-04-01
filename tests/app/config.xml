@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="org.apache.cordova.testsapp" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>Tests App</name>
+    <content src="cdvtests/index.html" />
+    <preference name="DisallowOverscroll" value="true" />
+    <platform name="ios">
+        <preference name="Orientation" value="all" />
+    </platform>
+    <plugin name="cordova-plugin-pluginname" spec="../../../cordova-plugin-pluginname" />
+    <plugin name="cordova-plugin-pluginname-tests" spec="../../../cordova-plugin-pluginname#:/tests" />
+    <plugin name="cordova-plugin-test-framework" spec="~1.1.1" />
+</widget>
