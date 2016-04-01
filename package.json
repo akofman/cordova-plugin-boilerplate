@@ -1,22 +1,46 @@
 {
-  "name": "your.name.space.yourPluginName",
-  "version": "0.0.1-dev",
-  "description": "Cordova Sample Plugin",
+  "name": "cordova-plugin-pluginname",
+  "version": "0.1.0-dev",
+  "description": "Cordova plugin description",
+  "homepage": "https://github.com/akofman/cordova-plugin-pluginname",
+  "author": {
+    "name": ""
+  },
+  "license": "Apache-2.0",
   "cordova": {
-    "id": "your.name.space.yourPluginName",
+    "id": "cordova-plugin-pluginname",
     "platforms": [
-      "ios"
+      "ios",
+      "android"
     ]
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/akofman/cordova-plugin-boilerplate"
+    "url": "https://github.com/akofman/cordova-plugin-pluginname.git"
   },
   "keywords": [
     "cordova",
+    "ios",
+    "android",
     "ecosystem:cordova",
-    "cordova-ios"
+    "cordova-ios",
+    "cordova-android",
+    "cordova:plugin"
   ],
-  "author": "Alexis Kofman",
-  "license": "MIT"
+  "devDependencies": {
+    "cordova": "^6.1.0",
+    "cordova-paramedic": "^0.5.0",
+    "eslint": "^2.5.3",
+    "ios-sim": "^5.0.8",
+    "rimraf": "^2.3.4"
+  },
+  "scripts": {
+    "clean": "rimraf tests/app/platforms tests/app/plugins",
+    "cordova": "cordova",
+    "lint": "eslint pluginName.js tests",
+    "ios-test": "cordova-paramedic --platform ios --plugin ./ --verbose",
+    "ios-install": "cd tests/app && cordova platform rm ios && cordova platform add ios",
+    "ios-deploy-on-device": "cd tests/app && cordova platform run ios --device",
+    "android-test": "cordova-paramedic --platform android --plugin ./ --verbose"
+  }
 }
