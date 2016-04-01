@@ -1,6 +1,6 @@
 # cordova-plugin-boilerplate
 
-iOS Cordova plugin boilerplate written in Swift.
+An opinionated boilerplate for Cordova plugins including Swift compatibility, ESLint, Babel.
 
 ## Usage
 
@@ -26,6 +26,11 @@ $ git remote add origin yourgitrepourl.git
 
 Now you can code :)
 
+## Supported Platforms
+
+ - iOS
+ - Android
+ 
 ## License
 
 MIT © [Alexis Kofman](http://twitter.com/alexiskofman)
