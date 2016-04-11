@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
   xmlns:android="http://schemas.android.com/apk/res/android"
-  id="cordova-plugin-pluginname"
+  id="cordova-plugin-boilerplate"
   version="0.1.0-dev">
-  <name>PluginName</name>
+  <name>Boilerplate</name>
   <license>Apache 2.0</license>
   <description>Cordova plugin</description>
   <keywords>cordova,phonegap</keywords>
 
-  <js-module name="PluginName" src="pluginName.js">
-    <clobbers target="PluginName" />
+  <js-module name="Boilerplate" src="boilerplate.js">
+    <clobbers target="Boilerplate" />
   </js-module>
 
   <platform name="android">
@@ -19,12 +19,12 @@
     </config-file>
 
     <config-file target="res/xml/config.xml" parent="/*">
-      <feature name="PluginName">
-        <param name="android-package" value="org.apache.cordova.pluginname.PluginName"/>
+      <feature name="Boilerplate">
+        <param name="android-package" value="org.apache.cordova.boilerplate.Boilerplate"/>
       </feature>
     </config-file>
 
-    <source-file src="src/android/PluginName.java" target-dir="src/org/apache/cordova/pluginname" />
+    <source-file src="src/android/Boilerplate.java" target-dir="src/org/apache/cordova/boilerplate" />
 
     <!-- In order to keep permission compatibility you can uncomment this dependency -->
     <!-- <dependency id="cordova-plugin-compat" url="https://github.com/macdonst/cordova-plugin-compat"/> -->
@@ -32,12 +32,12 @@
 
   <platform name="ios">
     <config-file target="config.xml" parent="/*">
-      <feature name="PluginName">
-        <param name="ios-package" value="PluginName" />
+      <feature name="Boilerplate">
+        <param name="ios-package" value="Boilerplate" />
       </feature>
     </config-file>
 
-    <source-file src="src/ios/PluginName.swift" />
+    <source-file src="src/ios/Boilerplate.swift" />
 
     <dependency id="cordova-plugin-add-swift-support" url="https://github.com/akofman/cordova-plugin-add-swift-support"/>
   </platform>

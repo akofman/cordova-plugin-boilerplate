@@ -1,7 +1,7 @@
 import Foundation
 
-@objc(PluginName) class PluginName : CDVPlugin {
-  private let LOG_TAG = "PluginName"
+@objc(Boilerplate) class Boilerplate : CDVPlugin {
+  private let LOG_TAG = "Boilerplate"
 
   func hello(command: CDVInvokedUrlCommand) {
     let message = "Hello !"

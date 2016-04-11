@@ -1,4 +1,4 @@
-package org.apache.cordova.pluginname;
+package org.apache.cordova.boilerplate;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaPlugin;
@@ -12,9 +12,9 @@ import org.json.JSONObject;
 /**
 * Plugin Description
 */
-public class PluginName extends CordovaPlugin {
+public class Boilerplate extends CordovaPlugin {
 
-  private static final String LOG_TAG = "PluginName";
+  private static final String LOG_TAG = "Boilerplate";
 
   @Override
   public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
