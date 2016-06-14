@@ -39,7 +39,7 @@
 
     <source-file src="src/ios/Boilerplate.swift" />
 
-    <dependency id="cordova-plugin-add-swift-support" url="https://github.com/akofman/cordova-plugin-add-swift-support"/>
+    <dependency id="cordova-plugin-add-swift-support" version="https://github.com/akofman/cordova-plugin-add-swift-support"/>
   </platform>
 
 </plugin>
