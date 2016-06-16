@@ -1,45 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
-  xmlns:android="http://schemas.android.com/apk/res/android"
-  id="cordova-plugin-boilerplate"
-  version="0.1.0-dev">
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android" id="cordova-plugin-boilerplate" version="0.1.0-dev">
   <name>Boilerplate</name>
   <license>Apache 2.0</license>
   <description>Cordova plugin</description>
   <keywords>cordova,phonegap</keywords>
-
-  <js-module name="Boilerplate" src="boilerplate.js">
-    <clobbers target="Boilerplate" />
-  </js-module>
-
   <platform name="android">
+    <js-module name="Boilerplate" src="boilerplate.js">
+      <clobbers target="Boilerplate" />
+    </js-module>
     <config-file target="AndroidManifest.xml" parent="/*">
       <!-- Permissions can be configured from here -->
       <!-- <uses-permission android:name="android.permission.RECORD_AUDIO" /> -->
     </config-file>
-
     <config-file target="res/xml/config.xml" parent="/*">
       <feature name="Boilerplate">
         <param name="android-package" value="org.apache.cordova.boilerplate.Boilerplate"/>
       </feature>
     </config-file>
-
     <source-file src="src/android/Boilerplate.java" target-dir="src/org/apache/cordova/boilerplate" />
-
     <!-- In order to keep permission compatibility you can uncomment this dependency -->
     <!-- <dependency id="cordova-plugin-compat" url="https://github.com/macdonst/cordova-plugin-compat"/> -->
   </platform>
-
   <platform name="ios">
+    <js-module name="Boilerplate" src="boilerplate.js">
+      <clobbers target="Boilerplate" />
+    </js-module>
     <config-file target="config.xml" parent="/*">
       <feature name="Boilerplate">
         <param name="ios-package" value="Boilerplate" />
       </feature>
     </config-file>
-
     <source-file src="src/ios/Boilerplate.swift" />
-
-    <dependency id="cordova-plugin-add-swift-support" version="https://github.com/akofman/cordova-plugin-add-swift-support"/>
+    <dependency id="cordova-plugin-add-swift-support" version="1.3.1"/>
   </platform>
-
 </plugin>
