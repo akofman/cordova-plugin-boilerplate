@@ -13,7 +13,8 @@ export default (pluginName) => {
                   './tests/tests.js',
                   './tests/plugin.xml',
                   './tests/app/config.xml',
-                  './package.json'
+                  './package.json',
+                  'boilerplate.js'
                 ];
   const upperCamelCaseName = `${pluginName[0].toUpperCase()}${pluginName.substr(1)}`;
   const lowerCamelCaseName = camelCase(pluginName);
@@ -36,10 +37,13 @@ export default (pluginName) => {
   fs.rename('./src/www/boilerplate.js', `./src/www/${lowerCamelCaseName}.js`, (err) => {
     if ( err ) console.log('ERROR: ' + err);
   });
+  fs.rename('./boilerplate.js', `./${lowerCamelCaseName}.js`, (err) => {
+    if ( err ) console.log('ERROR: ' + err);
+  });
 
-  // init an empty git repo
-  rimraf.sync('./.git');
+  // Init an empty git repo
   const pjson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+  rimraf.sync('./.git');
 
   return git.init().then(() =>
     git.addRemote('origin', pjson.repository.url).then(() => {

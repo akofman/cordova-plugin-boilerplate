@@ -2541,7 +2541,7 @@
 	var git = (0, _simpleGit2.default)();
 
 	exports.default = function (pluginName) {
-	  var files = ['./plugin.xml', './src/android/Boilerplate.java', './src/ios/Boilerplate.swift', './src/www/boilerplate.js', './tests/tests.js', './tests/plugin.xml', './tests/app/config.xml', './package.json'];
+	  var files = ['./plugin.xml', './src/android/Boilerplate.java', './src/ios/Boilerplate.swift', './src/www/boilerplate.js', './tests/tests.js', './tests/plugin.xml', './tests/app/config.xml', './package.json', 'boilerplate.js'];
 	  var upperCamelCaseName = '' + pluginName[0].toUpperCase() + pluginName.substr(1);
 	  var lowerCamelCaseName = (0, _camelCase2.default)(pluginName);
 
@@ -2563,10 +2563,13 @@
 	  _fs2.default.rename('./src/www/boilerplate.js', './src/www/' + lowerCamelCaseName + '.js', function (err) {
 	    if (err) console.log('ERROR: ' + err);
 	  });
+	  _fs2.default.rename('./boilerplate.js', './' + lowerCamelCaseName + '.js', function (err) {
+	    if (err) console.log('ERROR: ' + err);
+	  });
 
-	  // init an empty git repo
-	  _rimraf2.default.sync('./.git');
+	  // Init an empty git repo
 	  var pjson = JSON.parse(_fs2.default.readFileSync('./package.json', 'utf8'));
+	  _rimraf2.default.sync('./.git');
 
 	  return git.init().then(function () {
 	    return git.addRemote('origin', pjson.repository.url).then(function () {
@@ -3611,7 +3614,7 @@
 	      var opt = (handler === then ? options : null) || {};
 
 	      var splitter = opt.splitter || ';';
-	      var command = ["log", "--pretty=format:%H".replace(/\s+/g, splitter)];
+	      var command = ["log", "--pretty=format:%H %ai %s%d %aN %ae".replace(/\s+/g, splitter)];
 
 
 	      if (Array.isArray(opt)) {
@@ -3639,8 +3642,6 @@
 	      }
 
 	      return this._run(command, function (err, data) {
-	        console.log(err, this._parseListLog.toString());
-
 	         handler && handler(err, !err && this._parseListLog(data, splitter));
 	      });
 	   };
@@ -3763,7 +3764,6 @@
 	      this._runCache.push([command, then]);
 	      this._schedule();
 
-	      console.log(command);
 	      return this;
 	   };
 
@@ -3776,24 +3776,18 @@
 
 	         var stdOut = [];
 	         var stdErr = [];
-	         console.log(this._command,command.slice(0) );
 	         var spawned = this.ChildProcess.spawn(this._command, command.slice(0), {
 	            cwd: this._baseDir
 	         });
 
 	         spawned.stdout.on('data', function (buffer) {
-	           console.log('ok');
-
 	            stdOut.push(buffer);
 	         });
 	         spawned.stderr.on('data', function (buffer) {
-	           console.log('ko');
-
 	            stdErr.push(buffer);
 	         });
 
 	         spawned.on('error', function (err) {
-	           console.log('err');
 	            stdErr.push(new Buffer(err.stack, 'ascii'));
 	         });
 
@@ -3817,7 +3811,6 @@
 	         this._childProcess = spawned;
 
 	         if (this._outputHandler) {
-	           console.log('toto');
 	            this._outputHandler(command[0],
 	               this._childProcess.stdout,
 	               this._childProcess.stderr);
