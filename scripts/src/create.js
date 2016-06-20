@@ -39,8 +39,11 @@ export default (pluginName) => {
 
   // init an empty git repo
   rimraf.sync('./.git');
+  const pjson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
 
-  return git.init(() => {
-    console.log('Git repository is well initialized.');
-  });
+  return git.init().then(() =>
+    git.addRemote('origin', pjson.repository.url).then(() => {
+      console.log('Git repository is well initialized.');
+    })
+  );
 }

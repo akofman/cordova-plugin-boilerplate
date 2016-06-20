@@ -2566,9 +2566,12 @@
 
 	  // init an empty git repo
 	  _rimraf2.default.sync('./.git');
+	  var pjson = JSON.parse(_fs2.default.readFileSync('./package.json', 'utf8'));
 
-	  return git.init(function () {
-	    console.log('Git repository is well initialized.');
+	  return git.init().then(function () {
+	    return git.addRemote('origin', pjson.repository.url).then(function () {
+	      console.log('Git repository is well initialized.');
+	    });
 	  });
 	};
 
