@@ -39,6 +39,7 @@
     "ios-sim": "^5.0.8",
     "replacestream": "^4.0.0",
     "rimraf": "^2.3.4",
+    "simple-git": "^1.38.0",
     "webpack": "^1.13.1",
     "xml2js": "^0.4.16"
   },

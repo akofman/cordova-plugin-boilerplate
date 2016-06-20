@@ -1,9 +1,9 @@
-/*
-* Replaces all occurences of Boilerplate by the plugin name.
-**/
-
 import camelCase from 'camel-case';
 import fs from 'fs';
+import Git from 'simple-git';
+import rimraf from 'rimraf';
+
+const git = Git();
 
 export default (pluginName) => {
   const files = [ './plugin.xml',
@@ -18,6 +18,7 @@ export default (pluginName) => {
   const upperCamelCaseName = `${pluginName[0].toUpperCase()}${pluginName.substr(1)}`;
   const lowerCamelCaseName = camelCase(pluginName);
 
+  // Replace all occurences of Boilerplate by the plugin name.
   files.forEach((file) => {
     const content = fs.readFileSync(file, 'utf8');
     const newContent = content.replace(/Boilerplate/g, upperCamelCaseName).replace(/boilerplate/g, lowerCamelCaseName);
@@ -25,6 +26,7 @@ export default (pluginName) => {
     fs.writeFileSync(file, newContent, 'utf8');
   })
 
+  // Rename files
   fs.rename('./src/android/Boilerplate.java', `./src/android/${upperCamelCaseName}.java`, (err) => {
     if ( err ) console.log('ERROR: ' + err);
   });
@@ -33,5 +35,12 @@ export default (pluginName) => {
   });
   fs.rename('./src/www/boilerplate.js', `./src/www/${lowerCamelCaseName}.js`, (err) => {
     if ( err ) console.log('ERROR: ' + err);
+  });
+
+  // init an empty git repo
+  rimraf.sync('./.git');
+
+  return git.init(() => {
+    console.log('Git repository is well initialized.');
   });
 }

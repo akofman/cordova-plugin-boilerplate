@@ -66,34 +66,44 @@
 
 	var _create2 = _interopRequireDefault(_create);
 
-	var _removePlatform = __webpack_require__(40);
+	var _removePlatform = __webpack_require__(66);
 
 	var _removePlatform2 = _interopRequireDefault(_removePlatform);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 	var showHelp = function showHelp() {
-	  console.error('Usage: scripts create <PluginName> [–-without-platform <android|ios>]');
-	  console.error('       scripts test <platform>');
-	  console.error('       scripts deploy <platform>');
+	  console.error('Usage: create <PluginName> [–-without-platform <android|ios>]');
+	  console.error('       test <platform>');
+	  console.error('       deploy <platform>');
 	};
 
+	var error = false;
 	var args = process.argv.slice(2);
 	if (args.length > 0) {
 	  var action = args[0];
 	  if (action === 'create' && args[1]) {
-	    (0, _create2.default)(args[1]);
-
-	    if (args[2] === '--without-platform' && args[3]) {
-	      (0, _removePlatform2.default)(args[3]);
-	    }
-
-	    process.exit();
-	  } else if (action === 'test') {} else if (action === 'deploy') {}
+	    error = 0;
+	    (0, _create2.default)(args[1]).then(function () {
+	      if (args[2] === '--without-platform' && args[3]) {
+	        (0, _removePlatform2.default)(args[3]);
+	      }
+	    });
+	  } else if (action === 'test') {
+	    // TODO
+	  } else if (action === 'deploy') {
+	      // TODO
+	    } else {
+	        error = true;
+	      }
+	} else {
+	  error = true;
 	}
 
-	showHelp();
-	process.exit(1);
+	if (error) {
+	  showHelp();
+	  process.exit(1);
+	}
 
 /***/ },
 /* 2 */
@@ -2518,17 +2528,24 @@
 
 	var _fs2 = _interopRequireDefault(_fs);
 
+	var _simpleGit = __webpack_require__(40);
+
+	var _simpleGit2 = _interopRequireDefault(_simpleGit);
+
+	var _rimraf = __webpack_require__(48);
+
+	var _rimraf2 = _interopRequireDefault(_rimraf);
+
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-	/*
-	* Replaces all occurences of Boilerplate by the plugin name.
-	**/
+	var git = (0, _simpleGit2.default)();
 
 	exports.default = function (pluginName) {
 	  var files = ['./plugin.xml', './src/android/Boilerplate.java', './src/ios/Boilerplate.swift', './src/www/boilerplate.js', './tests/tests.js', './tests/plugin.xml', './tests/app/config.xml', './package.json'];
 	  var upperCamelCaseName = '' + pluginName[0].toUpperCase() + pluginName.substr(1);
 	  var lowerCamelCaseName = (0, _camelCase2.default)(pluginName);
 
+	  // Replace all occurences of Boilerplate by the plugin name.
 	  files.forEach(function (file) {
 	    var content = _fs2.default.readFileSync(file, 'utf8');
 	    var newContent = content.replace(/Boilerplate/g, upperCamelCaseName).replace(/boilerplate/g, lowerCamelCaseName);
@@ -2536,6 +2553,7 @@
 	    _fs2.default.writeFileSync(file, newContent, 'utf8');
 	  });
 
+	  // Rename files
 	  _fs2.default.rename('./src/android/Boilerplate.java', './src/android/' + upperCamelCaseName + '.java', function (err) {
 	    if (err) console.log('ERROR: ' + err);
 	  });
@@ -2544,6 +2562,13 @@
 	  });
 	  _fs2.default.rename('./src/www/boilerplate.js', './src/www/' + lowerCamelCaseName + '.js', function (err) {
 	    if (err) console.log('ERROR: ' + err);
+	  });
+
+	  // init an empty git repo
+	  _rimraf2.default.sync('./.git');
+
+	  return git.init(function () {
+	    console.log('Git repository is well initialized.');
 	  });
 	};
 
@@ -2763,6 +2788,4978 @@
 /* 40 */
 /***/ function(module, exports, __webpack_require__) {
 
+	
+	var Git = __webpack_require__(41);
+
+	var ChildProcess = __webpack_require__(29);
+	var Buffer = __webpack_require__(47).Buffer;
+
+	module.exports = function (baseDir) {
+	    return new Git(baseDir || process.cwd(), ChildProcess, Buffer);
+	};
+
+
+
+/***/ },
+/* 41 */
+/***/ function(module, exports, __webpack_require__) {
+
+	(function () {
+
+	   /**
+	    * Git handling for node. All public functions can be chained and all `then` handlers are optional.
+	    *
+	    * @param {string} baseDir base directory for all processes to run
+	    *
+	    * @param {Function} ChildProcess The ChildProcess constructor to use
+	    * @param {Function} Buffer The Buffer implementation to use
+	    *
+	    * @constructor
+	    */
+	   function Git (baseDir, ChildProcess, Buffer) {
+	      this._baseDir = baseDir;
+	      this._runCache = [];
+
+	      this.ChildProcess = ChildProcess;
+	      this.Buffer = Buffer;
+	   }
+
+	   /**
+	    * @type {string} The command to use to reference the git binary
+	    */
+	   Git.prototype._command = 'git';
+
+	   /**
+	    * @type {Function} An optional handler to use when a child process is created
+	    */
+	   Git.prototype._outputHandler = null;
+
+	   /**
+	    * @type {boolean} Property showing whether logging will be silenced - defaults to true in a production environment
+	    */
+	   Git.prototype._silentLogging = /prod/.test(process.env.NODE_ENV);
+
+	   /**
+	    * Sets the path to a custom git binary, should either be `git` when there is an installation of git available on
+	    * the system path, or a fully qualified path to the executable.
+	    *
+	    * @param {string} command
+	    * @returns {Git}
+	    */
+	   Git.prototype.customBinary = function (command) {
+	      this._command = command;
+	      return this;
+	   };
+
+	   /**
+	    * Sets a handler function to be called whenever a new child process is created, the handler function will be called
+	    * with the name of the command being run and the stdout & stderr streams used by the ChildProcess.
+	    *
+	    * @example
+	    * require('simple-git')
+	    *    .outputHandler(function (command, stdout, stderr) {
+	    *       stdout.pipe(process.stdout);
+	    *    })
+	    *    .checkout('https://github.com/user/repo.git');
+	    *
+	    * @see http://nodejs.org/api/child_process.html#child_process_class_childprocess
+	    * @see http://nodejs.org/api/stream.html#stream_class_stream_readable
+	    * @param {Function} outputHandler
+	    * @returns {Git}
+	    */
+	   Git.prototype.outputHandler = function (outputHandler) {
+	      this._outputHandler = outputHandler;
+	      return this;
+	   };
+
+	   /**
+	    * Initialize a git repo
+	    *
+	    * @param {Boolean} [bare=false]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.init = function (bare, then) {
+	      var commands = ['init'];
+	      var next = Git.trailingFunctionArgument(arguments);
+
+	      if (bare === true) {
+	         commands.push('--bare');
+	      }
+
+	      return this._run(commands, function (err) {
+	         next && next(err);
+	      });
+	   };
+
+	   /**
+	    * Check the status of the local repo
+	    *
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.status = function (then) {
+	      return this._run(['status', '--porcelain', '-b'], function (err, data) {
+	         then && then(err, !err && __webpack_require__(42).parse(data));
+	      });
+	   };
+
+	   /**
+	    * Clone a git repo
+	    *
+	    * @param {string} repoPath
+	    * @param {string} localPath
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.clone = function (repoPath, localPath, then) {
+	      return this._run(['clone', repoPath, localPath], function (err) {
+	         then && then(err);
+	      });
+	   };
+
+	   /**
+	    * Internally uses pull and tags to get the list of tags then checks out the latest tag.
+	    *
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.checkoutLatestTag = function (then) {
+	      var git = this;
+	      return this.pull().tags(function (err, tags) {
+	         git.checkout(tags.latest, then);
+	      });
+	   };
+
+	   /**
+	    * Adds one or more files to source control
+	    *
+	    * @param {string|string[]} files
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.add = function (files, then) {
+	      return this._run(['add'].concat(files), function (err, data) {
+	         then && then(err);
+	      });
+	   };
+
+	   /**
+	    * Commits changes in the current working directory - when specific file paths are supplied, only changes on those
+	    * files will be committed.
+	    *
+	    * @param {string|string[]} message
+	    * @param {string|string[]} [files]
+	    * @param {Object} [options]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.commit = function (message, files, options, then) {
+	      var handler = Git.trailingFunctionArgument(arguments);
+
+	      var command = ['commit'];
+
+	      [].concat(message).forEach(function (message) {
+	         command.push('-m', message);
+	      });
+
+	      [].push.apply(command,  [].concat(typeof files === "string" || Array.isArray(files) ? files : []));
+
+	      if (typeof options === "object") {
+	         Object.keys(options).forEach(function (key) {
+	            var value = options[key];
+	            if (typeof value === 'string') {
+	               command.push(key + '=' + value);
+	            }
+	            else {
+	               command.push(key);
+	            }
+	         });
+	      }
+
+	      return this._run(command, function (err, data) {
+	         handler && handler(err, !err && __webpack_require__(43).parse(data));
+	      });
+	   };
+
+	   /**
+	    * Gets a function to be used for logging.
+	    *
+	    * @param {string} level
+	    * @param {string} [message]
+	    *
+	    * @returns {Function}
+	    * @private
+	    */
+	   Git.prototype._getLog = function (level, message) {
+	      var log = this._silentLogging ? function () {
+	      } : console[level].bind(console);
+	      if (arguments.length > 1) {
+	         log(message);
+	      }
+	      return log;
+	   };
+
+	   /**
+	    * Pull the updated contents of the current repo
+	    * @param {string} [remote]
+	    * @param {string} [branch]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.pull = function (remote, branch, then) {
+	      var command = ["pull"];
+	      if (typeof remote === 'string' && typeof branch === 'string') {
+	         command.push(remote, branch);
+	      }
+	      if (typeof arguments[arguments.length - 1] === 'function') {
+	         then = arguments[arguments.length - 1];
+	      }
+
+	      return this._run(command, function (err, data) {
+	         then && then(err, !err && this._parsePull(data));
+	      });
+	   };
+
+	   /**
+	    * Fetch the updated contents of the current repo.
+	    *
+	    * @example
+	    *   .fetch('upstream', 'master') // fetches from master on remote named upstream
+	    *   .fetch(function () {}) // runs fetch against default remote and branch and calls function
+	    *
+	    * @param {string} [remote]
+	    * @param {string} [branch]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.fetch = function (remote, branch, then) {
+	      var command = ["fetch"];
+	      if (typeof remote === 'string' && typeof branch === 'string') {
+	         command.push(remote, branch);
+	      }
+	      if (typeof arguments[arguments.length - 1] === 'function') {
+	         then = arguments[arguments.length - 1];
+	      }
+
+	      return this._run(command, function (err, data) {
+	         then && then(err, !err && this._parseFetch(data));
+	      });
+	   };
+
+	   /**
+	    * Disables/enables the use of the console for printing warnings and errors, by default messages are not shown in
+	    * a production environment.
+	    *
+	    * @param {boolean} silence
+	    * @returns {Git}
+	    */
+	   Git.prototype.silent = function (silence) {
+	      this._silentLogging = !!silence;
+	      return this;
+	   };
+
+	   /**
+	    * List all tags
+	    *
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.tags = function (then) {
+	      return this.tag(['-l'], function (err, data) {
+	         then && then(err, !err && __webpack_require__(44).parse(data));
+	      });
+	   };
+
+	   /**
+	    * Reset a repo
+	    *
+	    * @param {string|string[]} [mode=soft] Either an array of arguments supported by the 'git reset' command, or the
+	    *                                        string value 'soft' or 'hard' to set the reset mode.
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.reset = function (mode, then) {
+	      var command = ['reset'];
+	      var next = Git.trailingFunctionArgument(arguments);
+	      if (next === mode || typeof mode === 'string' || !mode) {
+	         command.push('--' + (mode === 'hard' ? mode : 'soft'));
+	      }
+	      else if (Array.isArray(mode)) {
+	         command.push.apply(command, mode);
+	      }
+
+	      return this._run(command, function (err) {
+	         next && next(err || null);
+	      });
+	   };
+
+	   /**
+	    * Add a lightweight tag to the head of the current branch
+	    *
+	    * @param {string} name
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.addTag = function (name, then) {
+	      if (typeof name !== "string") {
+	         return this.then(function () {
+	            then && then(new TypeError("Git.addTag requires a tag name"));
+	         });
+	      }
+
+	      return this.tag([name], then);
+	   };
+
+	   /**
+	    * Add an annotated tag to the head of the current branch
+	    *
+	    * @param {string} tagName
+	    * @param {string} tagMessage
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.addAnnotatedTag = function (tagName, tagMessage, then) {
+	      return this.tag(['-a', '-m', tagMessage, tagName], function (err) {
+	         then && then(err);
+	      });
+	   };
+
+	   /**
+	    * Check out a tag or revision
+	    *
+	    * @param {string} what
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.checkout = function (what, then) {
+	      return this._run(['checkout', what], function (err, data) {
+	         then && then(err, !err && this._parseCheckout(data));
+	      });
+	   };
+
+	   /**
+	    * Check out a remote branch
+	    *
+	    * @param {string} branchName name of branch
+	    * @param {string} startPoint (e.g origin/development)
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.checkoutBranch = function (branchName, startPoint, then) {
+	      return this._run(['checkout', '-b', branchName, startPoint], function (err, data) {
+	         then && then(err, !err && this._parseCheckout(data));
+	      });
+	   };
+
+	   /**
+	    * Check out a local branch
+	    *
+	    * @param {string} branchName of branch
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.checkoutLocalBranch = function (branchName, then) {
+	      return this._run(['checkout', '-b', branchName], function (err, data) {
+	         then && then(err, !err && this._parseCheckout(data));
+	      });
+	   };
+
+	  /**
+	    * List all branches
+	    *
+	    *@param {Function} [then]
+	    */
+	   Git.prototype.branch = function (then) {
+	      return this._run(['branch', '-a', '-v'], function (err, data) {
+	         then && then(err, !err && __webpack_require__(45).parse(data));
+	      });
+	   };
+
+	   /**
+	    * Add config to local git instance
+	    *
+	    * @param {string} key configuration key (e.g user.name)
+	    * @param {string} value for the given key (e.g your name)
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.addConfig = function (key, value, then) {
+	      return this._run(['config', '--local', key, value], function (err, data) {
+	         then && then(err, !err && data);
+	      });
+	   };
+
+	   /**
+	    * Add a submodule
+	    *
+	    * @param {string} repo
+	    * @param {string} path
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.submoduleAdd = function (repo, path, then) {
+	      return this._run(['submodule', 'add', repo, path], function (err) {
+	         then && then(err);
+	      });
+	   };
+
+	   /**
+	    * Update submodules
+	    *
+	    * @param {string[]} [args]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.submoduleUpdate = function (args, then) {
+	      if (typeof args === 'string') {
+	        this._getLog('warn', 'Git#submoduleUpdate: args should be supplied as an array of individual arguments');
+	      }
+
+	      var next = Git.trailingFunctionArgument(arguments);
+	      var command = (args !== next) ? args : [];
+
+	      return this.subModule(['update'].concat(command), function (err, args) {
+	         next && next(err, args);
+	      });
+	   };
+
+	   /**
+	    * Call any `git submodule` function with arguments passed as an array of strings.
+	    *
+	    * @param {string[]} options
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.subModule = function (options, then) {
+	      if (!Array.isArray(options)) {
+	         return this.then(function () {
+	            then && then(new TypeError("Git.subModule requires an array of arguments"));
+	         });
+	      }
+
+	      if (options[0] !== 'submodule') {
+	         options.unshift('submodule');
+	      }
+
+	      return this._run(options, function (err, data) {
+	         then && then(err || null, err ? null : data);
+	      });
+	   };
+
+	   /**
+	    * List remote
+	    *
+	    * @param {string[]} [args]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.listRemote = function (args, then) {
+	      var next = Git.trailingFunctionArgument(arguments);
+	      var data = next === args || args === undefined ? [] : args;
+
+	      if (typeof data === 'string') {
+	         this._getLog('warn', 'Git#listRemote: args should be supplied as an array of individual arguments');
+	      }
+
+	      return this._run(['ls-remote'].concat(data), function (err, data) {
+	         next && next(err, data);
+	      });
+	   };
+
+	   /**
+	    * Adds a remote to the list of remotes.
+	    *
+	    * @param {string} remoteName Name of the repository - eg "upstream"
+	    * @param {string} remoteRepo Fully qualified SSH or HTTP(S) path to the remote repo
+	    * @param {Function} [then]
+	    * @returns {*}
+	    */
+	   Git.prototype.addRemote = function (remoteName, remoteRepo, then) {
+	      return this._run(['remote', 'add', remoteName, remoteRepo], function (err) {
+	         then && then(err);
+	      });
+	   };
+
+	   /**
+	    * Removes an entry from the list of remotes.
+	    *
+	    * @param {string} remoteName Name of the repository - eg "upstream"
+	    * @param {Function} [then]
+	    * @returns {*}
+	    */
+	   Git.prototype.removeRemote = function (remoteName, then) {
+	      return this._run(['remote', 'remove', remoteName], function (err) {
+	         then && then(err);
+	      });
+	   };
+
+	   /**
+	    * Gets the currently available remotes, setting the optional verbose argument to true includes additional
+	    * detail on the remotes themselves.
+	    *
+	    * @param {boolean} [verbose=false]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.getRemotes = function (verbose, then) {
+	      var next = Git.trailingFunctionArgument(arguments);
+	      var args = verbose === true ? ['-v'] : [];
+
+	      return this.remote(args, function (err, data) {
+	         next && next(err, !err && function () {
+	               return data.trim().split('\n').reduce(function (remotes, remote) {
+	                  var detail = remote.trim().split(/\s+/);
+	                  var name = detail.shift();
+
+	                  if (!remotes[name]) {
+	                     remotes[name] = remotes[remotes.length] = {
+	                        name: name,
+	                        refs: {}
+	                     };
+	                  }
+
+	                  if (detail.length) {
+	                     remotes[name].refs[detail.pop().replace(/[^a-z]/g, '')] = detail.pop();
+	                  }
+
+	                  return remotes;
+	               }, []).slice(0);
+	            }());
+	      });
+	   };
+
+	   /**
+	    * Call any `git remote` function with arguments passed as an array of strings.
+	    *
+	    * @param {string[]} options
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.remote = function (options, then) {
+	      if (!Array.isArray(options)) {
+	         return this.then(function () {
+	            then && then(new TypeError("Git.remote requires an array of arguments"));
+	         });
+	      }
+
+	      if (options[0] !== 'remote') {
+	         options.unshift('remote');
+	      }
+
+	      return this._run(options, function (err, data) {
+	         then && then(err || null, err ? null : data);
+	      });
+	   };
+
+	   /**
+	    * Merges from one branch to another, equivalent to running `git merge ${from} $[to}`, the `options` argument can
+	    * either be an array of additional parameters to pass to the command or null / omitted to be ignored.
+	    *
+	    * @param {string} from
+	    * @param {string} to
+	    * @param {Object} [options]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.mergeFromTo = function (from, to, options, then) {
+	      var commands = [
+	         from,
+	         to
+	      ];
+	      var callback = Git.trailingFunctionArgument(arguments);
+
+	      if (Array.isArray(options)) {
+	         commands = commands.concat(options);
+	      }
+
+	      return this.merge(commands, callback);
+	   };
+
+	   Git.prototype.merge = function (options, then) {
+	      if (!Array.isArray(options)) {
+	         return this.then(function () {
+	            then && then(new TypeError("Git.merge requires an array of arguments"));
+	         });
+	      }
+
+	      if (options[0] !== 'merge') {
+	         options.unshift('merge');
+	      }
+
+	      return this._run(options, function (err, data) {
+	         then && then(err || null, err ? null : data);
+	      });
+	   };
+
+	   /**
+	    * Call any `git tag` function with arguments passed as an array of strings.
+	    *
+	    * @param {string[]} options
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.tag = function (options, then) {
+	      if (!Array.isArray(options)) {
+	         return this.then(function () {
+	            then && then(new TypeError("Git.tag requires an array of arguments"));
+	         });
+	      }
+
+	      if (options[0] !== 'tag') {
+	         options.unshift('tag');
+	      }
+
+	      return this._run(options, function (err, data) {
+	         then && then(err || null, err ? null : data);
+	      });
+	   };
+
+	   /**
+	    * Updates repository server info
+	    *
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.updateServerInfo =  function (then) {
+	       return this._run(["update-server-info"], function (err, data) {
+	           then && then(err, !err && data);
+	       });
+	   };
+
+	   /**
+	    * Pushes the current committed changes to a remote, optionally specify the names of the remote and branch to use
+	    * when pushing. Supply multiple options as an array of strings in the first argument - see examples below.
+	    *
+	    * @param {string|string[]} [remote]
+	    * @param {string} [branch]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.push = function (remote, branch, then) {
+	      var command = [];
+	      var handler = Git.trailingFunctionArgument(arguments);
+
+	      if (typeof remote === 'string' && typeof branch === 'string') {
+	         command.push(remote, branch);
+	      }
+
+	      if (Array.isArray(remote)) {
+	         command = command.concat(remote);
+	      }
+
+	      if (command[0] !== 'push') {
+	         command.unshift('push');
+	      }
+
+	      return this._run(command, function (err, data) {
+	         handler && handler(err, !err && data);
+	      });
+	   };
+
+	   /**
+	    * Pushes the current tag changes to a remote which can be either a URL or named remote. When not specified uses the
+	    * default configured remote spec.
+	    *
+	    * @param {string} [remote]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.pushTags = function (remote, then) {
+	      var command = ['push'];
+	      if (typeof remote === "string") {
+	         command.push(remote);
+	      }
+	      command.push('--tags');
+
+	      then = typeof arguments[arguments.length - 1] === "function" ? arguments[arguments.length - 1] : null;
+
+	      return this._run(command, function (err, data) {
+	         then && then(err, !err && data);
+	      });
+	   };
+
+	   /**
+	    * Removes the named files from source control.
+	    *
+	    * @param {string|string[]} files
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.rm = function (files, then) {
+	      return this._rm(files, '-f', then);
+	   };
+
+	   /**
+	    * Removes the named files from source control but keeps them on disk rather than deleting them entirely. To
+	    * completely remove the files, use `rm`.
+	    *
+	    * @param {string|string[]} files
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.rmKeepLocal = function (files, then) {
+	      return this._rm(files, '--cached', then);
+	   };
+
+	   /**
+	    * Returns a list of objects in a tree based on commit hash. Passing in an object hash returns the object's content,
+	    * size, and type.
+	    *
+	    * Passing "-p" will instruct cat-file to determine the object type, and display its formatted contents.
+	    *
+	    * @param {string[]} [options]
+	    * @param {Function} [then]
+	    */
+	  Git.prototype.catFile = function (options, then) {
+	     var handler = Git.trailingFunctionArgument(arguments);
+	     var command = ['cat-file'];
+
+	     if (typeof options === 'string') {
+	        throw new TypeError('Git#catFile: options must be supplied as an array of strings');
+	     }
+	     else if (Array.isArray(options)) {
+	        command.push.apply(command, options);
+	     }
+
+	     return this._run(command, function (err, data) {
+	        handler && handler(err, data);
+	     });
+	  };
+
+	   /**
+	    * Return repository changes.
+	    *
+	    * @param {string} [options]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.diff = function (options, then) {
+	      var command = ['diff'];
+
+	      if (typeof options === 'string') {
+	         command[0] += ' ' + options;
+	         this._getLog('warn',
+	            'Git#diff: supplying options as a single string is now deprecated, switch to an array of strings');
+	      }
+	      else if (Array.isArray(options)) {
+	         command.push.apply(command, options);
+	      }
+
+	      if (typeof arguments[arguments.length - 1] === 'function') {
+	         then = arguments[arguments.length - 1];
+	      }
+
+	      return this._run(command, function (err, data) {
+	         then && then(err, data);
+	      });
+	   };
+
+	   Git.prototype.diffSummary = function (then) {
+	      return this.diff(['--stat'], function (err, data) {
+	         then && then(err, !err && __webpack_require__(46).parse(data));
+	      });
+	   };
+
+	   /**
+	    * rev-parse.
+	    *
+	    * @param {string|string[]} [options]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.revparse = function (options, then) {
+	      var command = ['rev-parse'];
+
+	      if (typeof options === 'string') {
+	         command = command + ' ' + options;
+	         this._getLog('warn',
+	            'Git#revparse: supplying options as a single string is now deprecated, switch to an array of strings');
+	      }
+	      else if (Array.isArray(options)) {
+	         command.push.apply(command, options);
+	      }
+
+	      if (typeof arguments[arguments.length - 1] === 'function') {
+	         then = arguments[arguments.length - 1];
+	      }
+
+	      return this._run(command, function (err, data) {
+	         then && then(err, data);
+	      });
+	   };
+
+	   /**
+	    * Show various types of objects, for example the file at a certain commit
+	    *
+	    * @param {string} [options]
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.show = function (options, then) {
+	      var args = [].slice.call(arguments, 0);
+	      var handler = typeof args[args.length - 1] === "function" ? args.pop() : null;
+	      var command = ['show'];
+	      if (typeof options === 'string') {
+	         command = command + ' ' + options;
+	         this._getLog('warn',
+	            'Git#show: supplying options as a single string is now deprecated, switch to an array of strings');
+	      }
+	      else if (Array.isArray(options)) {
+	         command.push.apply(command, options);
+	      }
+
+	      return this._run(command, function (err, data) {
+	         handler && handler(err, !err && data);
+	      });
+	   };
+
+	   /**
+	    * Call a simple function
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.then = function (then) {
+	      this._run([], function () {
+	         typeof then === 'function' && then();
+	      });
+	      return this;
+	   };
+
+	   /**
+	    * Show commit logs.
+	    *
+	    * @param {Object|string[]} [options]
+	    * @param {string} [options.from] The first commit to include
+	    * @param {string} [options.to] The most recent commit to include
+	    * @param {string} [options.file] A single file to include in the result
+	    *
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.log = function (options, then) {
+	      var handler = Git.trailingFunctionArgument(arguments);
+	      var opt = (handler === then ? options : null) || {};
+
+	      var splitter = opt.splitter || ';';
+	      var command = ["log", "--pretty=format:%H".replace(/\s+/g, splitter)];
+
+
+	      if (Array.isArray(opt)) {
+	         command = command.concat(opt);
+	      }
+	      else if (typeof arguments[0] === "string" || typeof arguments[1] === "string") {
+	         this._getLog('warn',
+	            'Git#log: supplying to or from as strings is now deprecated, switch to an options configuration object');
+	         opt = {
+	            from: arguments[0],
+	            to: arguments[1]
+	         };
+	      }
+
+	      if (opt.from && opt.to) {
+	         command.push(opt.from + "..." + opt.to);
+	      }
+
+	      if (opt.file) {
+	         command.push("--follow", options.file);
+	      }
+
+	      if (opt.n || opt['max-count']) {
+	         command.push("--max-count=" + (opt.n || opt['max-count']));
+	      }
+
+	      return this._run(command, function (err, data) {
+	        console.log(err, this._parseListLog.toString());
+
+	         handler && handler(err, !err && this._parseListLog(data, splitter));
+	      });
+	   };
+
+	   /**
+	    * Check if a pathname or pathnames are excluded by .gitignore
+	    *
+	    * @param {string|string[]} pathnames
+	    * @param {Function} [then]
+	    */
+	   Git.prototype.checkIgnore = function (pathnames, then) {
+	      var handler = Git.trailingFunctionArgument(arguments);
+	      var command = ["check-ignore"];
+
+	      if (handler !== pathnames) {
+	         command = command.concat(pathnames);
+	      }
+
+	      return this._run(command, function (err, data) {
+	         handler && handler(err, !err && this._parseCheckIgnore(data));
+	      });
+	   };
+
+	   Git.prototype._rm = function (files, options, then) {
+	      return this._run(['rm', options, [].concat(files)], function (err) {
+	         then && then(err);
+	      });
+	   };
+
+	   Git.prototype._parsePull = function (pull) {
+	      var changes = {
+	         files: [],
+	         insertions: {},
+	         deletions: {},
+	         summary: {
+	            changes: 0,
+	            insertions: 0,
+	            deletions: 0
+	         }
+	      };
+
+	      var fileUpdateRegex = /^\s*(.+?)\s+\|\s+(\d+)\s([+\-]+)/;
+	      for (var lines = pull.split('\n'), i = 0, l = lines.length; i < l; i++) {
+	         var update = fileUpdateRegex.exec(lines[i]);
+
+	         // search for update statement for each file
+	         if (update) {
+	            changes.files.push(update[1]);
+
+	            var insertions = update[3].length;
+	            if (insertions) {
+	               changes.insertions[update[1]] = insertions;
+	            }
+	            if (update[2] > insertions) {
+	               changes.deletions[update[1]] = update[2] - insertions;
+	            }
+	         }
+
+	         // summary appears after updates
+	         else if (changes.files.length && (update = /(\d+)\D+(\d+)\D+(\d+)/.exec(lines[i]))) {
+	            changes.summary.changes = +update[1];
+	            changes.summary.insertions = +update[2];
+	            changes.summary.deletions = +update[3];
+	         }
+	      }
+
+	      return changes;
+	   };
+
+	   Git.prototype._parseCheckout = function (checkout) {
+	      // TODO
+	   };
+
+	   Git.prototype._parseFetch = function (fetch) {
+	      return fetch;
+	   };
+
+	   Git.prototype._parseListLog = function (logs, splitter) {
+	      var logList = logs.split('\n').map(function (item) {
+	         var parts = item.split(splitter);
+
+	         return {
+	            hash: parts[0],
+	            date: parts[1],
+	            message: parts[2],
+	            author_name: parts[3],
+	            author_email: parts[4]
+	         }
+	      });
+
+	      return {
+	         latest: logList.length && logList[0],
+	         total: logList.length,
+	         all: logList
+	      };
+	   };
+
+	   /**
+	    * Parser for the `check-ignore` command - returns each
+	    * @param {string} [files]
+	    * @returns {string[]}
+	    */
+	   Git.prototype._parseCheckIgnore = function (files) {
+	      return files.split(/\n/g).filter(Boolean).map(function (file) { return file.trim() });
+	   };
+
+	   /**
+	    * Schedules the supplied command to be run, the command should not include the name of the git binary and should
+	    * be an array of strings passed as the arguments to the git binary.
+	    *
+	    * @param {string[]} command
+	    * @param {Function} [then]
+	    *
+	    * @returns {Git}
+	    */
+	   Git.prototype._run = function (command, then) {
+	      if (typeof command === "string") {
+	         command = command.split(" ");
+	      }
+	      this._runCache.push([command, then]);
+	      this._schedule();
+
+	      console.log(command);
+	      return this;
+	   };
+
+	   Git.prototype._schedule = function () {
+	      if (!this._childProcess && this._runCache.length) {
+	         var Buffer = this.Buffer;
+	         var task = this._runCache.shift();
+	         var command = task[0];
+	         var then = task[1];
+
+	         var stdOut = [];
+	         var stdErr = [];
+	         console.log(this._command,command.slice(0) );
+	         var spawned = this.ChildProcess.spawn(this._command, command.slice(0), {
+	            cwd: this._baseDir
+	         });
+
+	         spawned.stdout.on('data', function (buffer) {
+	           console.log('ok');
+
+	            stdOut.push(buffer);
+	         });
+	         spawned.stderr.on('data', function (buffer) {
+	           console.log('ko');
+
+	            stdErr.push(buffer);
+	         });
+
+	         spawned.on('error', function (err) {
+	           console.log('err');
+	            stdErr.push(new Buffer(err.stack, 'ascii'));
+	         });
+
+	         spawned.on('close', function (exitCode, exitSignal) {
+	            delete this._childProcess;
+
+	            if (exitCode && stdErr.length) {
+	               stdErr = Buffer.concat(stdErr).toString('utf-8');
+
+	               this._getLog('error', stdErr);
+	               this._runCache = [];
+	               then.call(this, stdErr, null);
+	            }
+	            else {
+	               then.call(this, null, Buffer.concat(stdOut).toString('utf-8'));
+	            }
+
+	            process.nextTick(this._schedule.bind(this));
+	         }.bind(this));
+
+	         this._childProcess = spawned;
+
+	         if (this._outputHandler) {
+	           console.log('toto');
+	            this._outputHandler(command[0],
+	               this._childProcess.stdout,
+	               this._childProcess.stderr);
+	         }
+	      }
+	   };
+
+	   /**
+	    * Given any number of arguments, returns the last argument if it is a function, otherwise returns null.
+	    * @returns {Function|null}
+	    */
+	   Git.trailingFunctionArgument = function (args) {
+	      var trailing = args[args.length - 1];
+	      return (typeof trailing === "function") ? trailing : null;
+	   };
+
+	   module.exports = Git;
+
+	}());
+
+
+/***/ },
+/* 42 */
+/***/ function(module, exports) {
+
+	
+	module.exports = StatusSummary;
+
+	/**
+	 * The StatusSummary is returned as a response to getting `git().status()`
+	 *
+	 * @constructor
+	 */
+	function StatusSummary () {
+	   this.not_added = [];
+	   this.deleted = [];
+	   this.modified = [];
+	   this.created = [];
+	   this.conflicted = [];
+	}
+
+	/**
+	 * Number of commits ahead of the tracked branch
+	 * @type {number}
+	 */
+	StatusSummary.prototype.ahead = 0;
+
+	/**
+	 * Number of commits behind the tracked branch
+	 * @type {number}
+	 */
+	StatusSummary.prototype.behind = 0;
+
+	/**
+	 * Name of the current branch
+	 * @type {null}
+	 */
+	StatusSummary.prototype.current = null;
+
+	/**
+	 * Name of the branch being tracked
+	 * @type {string}
+	 */
+	StatusSummary.prototype.tracking = null;
+
+	/**
+	 * Gets whether this StatusSummary represents a clean working branch.
+	 *
+	 * @return {boolean}
+	 */
+	StatusSummary.prototype.isClean = function () {
+	   return 0 === Object.keys(this).filter(function (name) {
+	      return Array.isArray(this[name]) && this[name].length;
+	   }, this).length;
+	};
+
+	StatusSummary.parsers = {
+	   '##': function (line, status) {
+	      var aheadReg = /ahead (\d+)/;
+	      var behindReg = /behind (\d+)/;
+	      var currentReg = /^(.+?(?=(?:\.{3}|\s|$)))/;
+	      var trackingReg = /\.{3}(\S*)/;
+	      var regexResult;
+
+	      regexResult = aheadReg.exec(line);
+	      status.ahead = regexResult && +regexResult[1] || 0;
+
+	      regexResult = behindReg.exec(line);
+	      status.behind = regexResult && +regexResult[1] || 0;
+
+	      regexResult = currentReg.exec(line);
+	      status.current = regexResult && regexResult[1];
+
+	      regexResult = trackingReg.exec(line);
+	      status.tracking = regexResult && regexResult[1];
+	   },
+
+	   '??': function (line, status) {
+	      status.not_added.push(line);
+	   },
+
+	   D: function (line, status) {
+	      status.deleted.push(line);
+	   },
+
+	   M: function (line, status) {
+	      status.modified.push(line);
+	   },
+
+	   A: function (line, status) {
+	      status.created.push(line);
+	   },
+
+	   AM: function (line, status) {
+	      status.created.push(line);
+	   },
+
+	   UU: function (line, status) {
+	      status.conflicted.push(line);
+	   }
+	};
+
+	StatusSummary.parse = function (text) {
+	   var line, handler;
+
+	   var lines = text.trim().split('\n');
+	   var status = new StatusSummary();
+
+	   while (line = lines.shift()) {
+	      line = line.trim().match(/(\S+)\s+(.*)/);
+	      if (line && (handler = StatusSummary.parsers[line[1]])) {
+	         handler(line[2], status);
+	      }
+	   }
+
+	   return status;
+	};
+
+
+/***/ },
+/* 43 */
+/***/ function(module, exports) {
+
+	
+	module.exports = CommitSummary;
+
+	function CommitSummary () {
+	   this.branch = '';
+	   this.commit = '';
+	   this.summary = {
+	      changes: 0,
+	      insertions: 0,
+	      deletions: 0
+	   };
+	}
+
+	CommitSummary.prototype.setBranchFromCommit = function (commitData) {
+	   if (commitData) {
+	      this.branch = commitData[1];
+	      this.commit = commitData[2];
+	   }
+	};
+
+	CommitSummary.prototype.setSummaryFromCommit = function (commitData) {
+	   if (this.branch && commitData) {
+	      this.summary.changes = commitData[1] || 0;
+	      this.summary.insertions = commitData[2] || 0;
+	      this.summary.deletions = commitData[3] || 0;
+	   }
+	};
+
+	CommitSummary.parse = function (commit) {
+	   var lines = commit.trim().split('\n');
+
+	   var commitSummary = new CommitSummary();
+	   commitSummary.setBranchFromCommit(/\[([^\s]+) ([^\]]+)/.exec(lines.shift()));
+	   commitSummary.setSummaryFromCommit(/(\d+)[^,]*(?:,\s*(\d+)[^,]*)?(?:,\s*(\d+))?/g.exec(lines.shift()));
+
+	   return commitSummary;
+	};
+
+
+/***/ },
+/* 44 */
+/***/ function(module, exports) {
+
+	
+	module.exports = TagList;
+
+	function TagList (tagList, latest) {
+	   this.latest = latest;
+	   this.all = tagList
+	}
+
+	TagList.parse = function (data) {
+	   var tags = data
+	      .trim()
+	      .split('\n')
+	      .map(function (item) { return item.trim(); })
+	      .filter(Boolean)
+	      .sort(function (tagA, tagB) {
+	         var partsA = tagA.split('.');
+	         var partsB = tagB.split('.');
+
+	         if (partsA.length === 1 || partsB.length === 1) {
+	            return tagA - tagB > 0 ? 1 : -1;
+	         }
+
+	         for (var i = 0, l = Math.max(partsA.length, partsB.length); i < l; i++) {
+	            var diff = partsA[i] - partsB[i];
+	            if (diff) {
+	               return diff > 0 ? 1 : -1;
+	            }
+	         }
+
+	         return 0;
+	      });
+
+	   var latest = tags.filter(function (tag) { return tag.indexOf('.') >= 0; }).pop();
+
+	   return new TagList(tags, latest);
+	};
+
+
+/***/ },
+/* 45 */
+/***/ function(module, exports) {
+
+	
+	module.exports = BranchSummary;
+
+	function BranchSummary () {
+	   this.detached = false;
+	   this.current = '';
+	   this.all = [];
+	   this.branches = {};
+	}
+
+	BranchSummary.prototype.push = function (current, detached, name, commit, label) {
+	   if (current) {
+	      this.detached = detached;
+	      this.current = name;
+	   }
+	   this.all.push(name);
+	   this.branches[name] = {
+	      current: current,
+	      name: name,
+	      commit: commit,
+	      label: label
+	   };
+	};
+
+	BranchSummary.detachedRegex = /^(\*?\s+)\(detached from (\S+)\)\s+([a-z0-9]+)\s(.*)$/;
+	BranchSummary.branchRegex = /^(\*?\s+)(\S+)\s+([a-z0-9]+)\s(.*)$/;
+
+	BranchSummary.parse = function (commit) {
+	   var branchSummary = new BranchSummary();
+
+	   commit.split('\n')
+	      .forEach(function (line) {
+	         var detached = true;
+	         var branch = BranchSummary.detachedRegex.exec(line);
+	         if (!branch) {
+	            detached = false;
+	            branch = BranchSummary.branchRegex.exec(line);
+	         }
+
+	         if (branch) {
+	            branchSummary.push(
+	               branch[1].charAt(0) === '*',
+	               detached,
+	               branch[2],
+	               branch[3],
+	               branch[4]
+	            );
+	         }
+	      });
+
+	   return branchSummary;
+	};
+
+
+/***/ },
+/* 46 */
+/***/ function(module, exports) {
+
+	
+	module.exports = DiffSummary;
+
+	/**
+	 * The DiffSummary is returned as a response to getting `git().status()`
+	 *
+	 * @constructor
+	 */
+	function DiffSummary () {
+	   this.files = [];
+	   this.insertions = 0;
+	   this.deletions = 0;
+	}
+
+	/**
+	 * Number of lines added
+	 * @type {number}
+	 */
+	DiffSummary.prototype.insertions = 0;
+
+	/**
+	 * Number of lines deleted
+	 * @type {number}
+	 */
+	DiffSummary.prototype.deletions = 0;
+
+	DiffSummary.parse = function (text) {
+	   var line, handler;
+
+	   var lines = text.trim().split('\n');
+	   var status = new DiffSummary();
+
+	   var summary = lines.pop();
+	   if (summary) {
+	      summary.trim().split(', ').slice(1).forEach(function (text) {
+	         var summary = /(\d+)\s([a-z]+)/.exec(text);
+	         if (summary) {
+	            status[summary[2].replace(/s$/, '') + 's'] = parseInt(summary[1], 10);
+	         }
+	      });
+	   }
+
+	   while (line = lines.shift()) {
+	      line = line.trim().match(/^(.+)\s+\|\s+(\d+)\s+([+\-]+)$/);
+	      if (line) {
+	         status.files.push({
+	            file: line[1].trim(),
+	            changes: parseInt(line[2], 10),
+	            insertions: line[3].replace(/\-/g, '').length,
+	            deletions: line[3].replace(/\+/g, '').length
+	         });
+	      }
+	   }
+
+	   return status;
+	};
+
+
+/***/ },
+/* 47 */
+/***/ function(module, exports) {
+
+	module.exports = require("buffer");
+
+/***/ },
+/* 48 */
+/***/ function(module, exports, __webpack_require__) {
+
+	module.exports = rimraf
+	rimraf.sync = rimrafSync
+
+	var assert = __webpack_require__(49)
+	var path = __webpack_require__(9)
+	var fs = __webpack_require__(7)
+	var glob = __webpack_require__(50)
+
+	var defaultGlobOpts = {
+	  nosort: true,
+	  silent: true
+	}
+
+	// for EMFILE handling
+	var timeout = 0
+
+	var isWindows = (process.platform === "win32")
+
+	function defaults (options) {
+	  var methods = [
+	    'unlink',
+	    'chmod',
+	    'stat',
+	    'lstat',
+	    'rmdir',
+	    'readdir'
+	  ]
+	  methods.forEach(function(m) {
+	    options[m] = options[m] || fs[m]
+	    m = m + 'Sync'
+	    options[m] = options[m] || fs[m]
+	  })
+
+	  options.maxBusyTries = options.maxBusyTries || 3
+	  options.emfileWait = options.emfileWait || 1000
+	  if (options.glob === false) {
+	    options.disableGlob = true
+	  }
+	  options.disableGlob = options.disableGlob || false
+	  options.glob = options.glob || defaultGlobOpts
+	}
+
+	function rimraf (p, options, cb) {
+	  if (typeof options === 'function') {
+	    cb = options
+	    options = {}
+	  }
+
+	  assert(p, 'rimraf: missing path')
+	  assert.equal(typeof p, 'string', 'rimraf: path should be a string')
+	  assert(options, 'rimraf: missing options')
+	  assert.equal(typeof options, 'object', 'rimraf: options should be object')
+	  assert.equal(typeof cb, 'function', 'rimraf: callback function required')
+
+	  defaults(options)
+
+	  var busyTries = 0
+	  var errState = null
+	  var n = 0
+
+	  if (options.disableGlob || !glob.hasMagic(p))
+	    return afterGlob(null, [p])
+
+	  fs.lstat(p, function (er, stat) {
+	    if (!er)
+	      return afterGlob(null, [p])
+
+	    glob(p, options.glob, afterGlob)
+	  })
+
+	  function next (er) {
+	    errState = errState || er
+	    if (--n === 0)
+	      cb(errState)
+	  }
+
+	  function afterGlob (er, results) {
+	    if (er)
+	      return cb(er)
+
+	    n = results.length
+	    if (n === 0)
+	      return cb()
+
+	    results.forEach(function (p) {
+	      rimraf_(p, options, function CB (er) {
+	        if (er) {
+	          if (isWindows && (er.code === "EBUSY" || er.code === "ENOTEMPTY" || er.code === "EPERM") &&
+	              busyTries < options.maxBusyTries) {
+	            busyTries ++
+	            var time = busyTries * 100
+	            // try again, with the same exact callback as this one.
+	            return setTimeout(function () {
+	              rimraf_(p, options, CB)
+	            }, time)
+	          }
+
+	          // this one won't happen if graceful-fs is used.
+	          if (er.code === "EMFILE" && timeout < options.emfileWait) {
+	            return setTimeout(function () {
+	              rimraf_(p, options, CB)
+	            }, timeout ++)
+	          }
+
+	          // already gone
+	          if (er.code === "ENOENT") er = null
+	        }
+
+	        timeout = 0
+	        next(er)
+	      })
+	    })
+	  }
+	}
+
+	// Two possible strategies.
+	// 1. Assume it's a file.  unlink it, then do the dir stuff on EPERM or EISDIR
+	// 2. Assume it's a directory.  readdir, then do the file stuff on ENOTDIR
+	//
+	// Both result in an extra syscall when you guess wrong.  However, there
+	// are likely far more normal files in the world than directories.  This
+	// is based on the assumption that a the average number of files per
+	// directory is >= 1.
+	//
+	// If anyone ever complains about this, then I guess the strategy could
+	// be made configurable somehow.  But until then, YAGNI.
+	function rimraf_ (p, options, cb) {
+	  assert(p)
+	  assert(options)
+	  assert(typeof cb === 'function')
+
+	  // sunos lets the root user unlink directories, which is... weird.
+	  // so we have to lstat here and make sure it's not a dir.
+	  options.lstat(p, function (er, st) {
+	    if (er && er.code === "ENOENT")
+	      return cb(null)
+
+	    if (st && st.isDirectory())
+	      return rmdir(p, options, er, cb)
+
+	    options.unlink(p, function (er) {
+	      if (er) {
+	        if (er.code === "ENOENT")
+	          return cb(null)
+	        if (er.code === "EPERM")
+	          return (isWindows)
+	            ? fixWinEPERM(p, options, er, cb)
+	            : rmdir(p, options, er, cb)
+	        if (er.code === "EISDIR")
+	          return rmdir(p, options, er, cb)
+	      }
+	      return cb(er)
+	    })
+	  })
+	}
+
+	function fixWinEPERM (p, options, er, cb) {
+	  assert(p)
+	  assert(options)
+	  assert(typeof cb === 'function')
+	  if (er)
+	    assert(er instanceof Error)
+
+	  options.chmod(p, 666, function (er2) {
+	    if (er2)
+	      cb(er2.code === "ENOENT" ? null : er)
+	    else
+	      options.stat(p, function(er3, stats) {
+	        if (er3)
+	          cb(er3.code === "ENOENT" ? null : er)
+	        else if (stats.isDirectory())
+	          rmdir(p, options, er, cb)
+	        else
+	          options.unlink(p, cb)
+	      })
+	  })
+	}
+
+	function fixWinEPERMSync (p, options, er) {
+	  assert(p)
+	  assert(options)
+	  if (er)
+	    assert(er instanceof Error)
+
+	  try {
+	    options.chmodSync(p, 666)
+	  } catch (er2) {
+	    if (er2.code === "ENOENT")
+	      return
+	    else
+	      throw er
+	  }
+
+	  try {
+	    var stats = options.statSync(p)
+	  } catch (er3) {
+	    if (er3.code === "ENOENT")
+	      return
+	    else
+	      throw er
+	  }
+
+	  if (stats.isDirectory())
+	    rmdirSync(p, options, er)
+	  else
+	    options.unlinkSync(p)
+	}
+
+	function rmdir (p, options, originalEr, cb) {
+	  assert(p)
+	  assert(options)
+	  if (originalEr)
+	    assert(originalEr instanceof Error)
+	  assert(typeof cb === 'function')
+
+	  // try to rmdir first, and only readdir on ENOTEMPTY or EEXIST (SunOS)
+	  // if we guessed wrong, and it's not a directory, then
+	  // raise the original error.
+	  options.rmdir(p, function (er) {
+	    if (er && (er.code === "ENOTEMPTY" || er.code === "EEXIST" || er.code === "EPERM"))
+	      rmkids(p, options, cb)
+	    else if (er && er.code === "ENOTDIR")
+	      cb(originalEr)
+	    else
+	      cb(er)
+	  })
+	}
+
+	function rmkids(p, options, cb) {
+	  assert(p)
+	  assert(options)
+	  assert(typeof cb === 'function')
+
+	  options.readdir(p, function (er, files) {
+	    if (er)
+	      return cb(er)
+	    var n = files.length
+	    if (n === 0)
+	      return options.rmdir(p, cb)
+	    var errState
+	    files.forEach(function (f) {
+	      rimraf(path.join(p, f), options, function (er) {
+	        if (errState)
+	          return
+	        if (er)
+	          return cb(errState = er)
+	        if (--n === 0)
+	          options.rmdir(p, cb)
+	      })
+	    })
+	  })
+	}
+
+	// this looks simpler, and is strictly *faster*, but will
+	// tie up the JavaScript thread and fail on excessively
+	// deep directory trees.
+	function rimrafSync (p, options) {
+	  options = options || {}
+	  defaults(options)
+
+	  assert(p, 'rimraf: missing path')
+	  assert.equal(typeof p, 'string', 'rimraf: path should be a string')
+	  assert(options, 'rimraf: missing options')
+	  assert.equal(typeof options, 'object', 'rimraf: options should be object')
+
+	  var results
+
+	  if (options.disableGlob || !glob.hasMagic(p)) {
+	    results = [p]
+	  } else {
+	    try {
+	      fs.lstatSync(p)
+	      results = [p]
+	    } catch (er) {
+	      results = glob.sync(p, options.glob)
+	    }
+	  }
+
+	  if (!results.length)
+	    return
+
+	  for (var i = 0; i < results.length; i++) {
+	    var p = results[i]
+
+	    try {
+	      var st = options.lstatSync(p)
+	    } catch (er) {
+	      if (er.code === "ENOENT")
+	        return
+	    }
+
+	    try {
+	      // sunos lets the root user unlink directories, which is... weird.
+	      if (st && st.isDirectory())
+	        rmdirSync(p, options, null)
+	      else
+	        options.unlinkSync(p)
+	    } catch (er) {
+	      if (er.code === "ENOENT")
+	        return
+	      if (er.code === "EPERM")
+	        return isWindows ? fixWinEPERMSync(p, options, er) : rmdirSync(p, options, er)
+	      if (er.code !== "EISDIR")
+	        throw er
+	      rmdirSync(p, options, er)
+	    }
+	  }
+	}
+
+	function rmdirSync (p, options, originalEr) {
+	  assert(p)
+	  assert(options)
+	  if (originalEr)
+	    assert(originalEr instanceof Error)
+
+	  try {
+	    options.rmdirSync(p)
+	  } catch (er) {
+	    if (er.code === "ENOENT")
+	      return
+	    if (er.code === "ENOTDIR")
+	      throw originalEr
+	    if (er.code === "ENOTEMPTY" || er.code === "EEXIST" || er.code === "EPERM")
+	      rmkidsSync(p, options)
+	  }
+	}
+
+	function rmkidsSync (p, options) {
+	  assert(p)
+	  assert(options)
+	  options.readdirSync(p).forEach(function (f) {
+	    rimrafSync(path.join(p, f), options)
+	  })
+	  options.rmdirSync(p, options)
+	}
+
+
+/***/ },
+/* 49 */
+/***/ function(module, exports) {
+
+	module.exports = require("assert");
+
+/***/ },
+/* 50 */
+/***/ function(module, exports, __webpack_require__) {
+
+	// Approach:
+	//
+	// 1. Get the minimatch set
+	// 2. For each pattern in the set, PROCESS(pattern, false)
+	// 3. Store matches per-set, then uniq them
+	//
+	// PROCESS(pattern, inGlobStar)
+	// Get the first [n] items from pattern that are all strings
+	// Join these together.  This is PREFIX.
+	//   If there is no more remaining, then stat(PREFIX) and
+	//   add to matches if it succeeds.  END.
+	//
+	// If inGlobStar and PREFIX is symlink and points to dir
+	//   set ENTRIES = []
+	// else readdir(PREFIX) as ENTRIES
+	//   If fail, END
+	//
+	// with ENTRIES
+	//   If pattern[n] is GLOBSTAR
+	//     // handle the case where the globstar match is empty
+	//     // by pruning it out, and testing the resulting pattern
+	//     PROCESS(pattern[0..n] + pattern[n+1 .. $], false)
+	//     // handle other cases.
+	//     for ENTRY in ENTRIES (not dotfiles)
+	//       // attach globstar + tail onto the entry
+	//       // Mark that this entry is a globstar match
+	//       PROCESS(pattern[0..n] + ENTRY + pattern[n .. $], true)
+	//
+	//   else // not globstar
+	//     for ENTRY in ENTRIES (not dotfiles, unless pattern[n] is dot)
+	//       Test ENTRY against pattern[n]
+	//       If fails, continue
+	//       If passes, PROCESS(pattern[0..n] + item + pattern[n+1 .. $])
+	//
+	// Caveat:
+	//   Cache all stats and readdirs results to minimize syscall.  Since all
+	//   we ever care about is existence and directory-ness, we can just keep
+	//   `true` for files, and [children,...] for directories, or `false` for
+	//   things that don't exist.
+
+	module.exports = glob
+
+	var fs = __webpack_require__(7)
+	var rp = __webpack_require__(51)
+	var minimatch = __webpack_require__(53)
+	var Minimatch = minimatch.Minimatch
+	var inherits = __webpack_require__(57)
+	var EE = __webpack_require__(59).EventEmitter
+	var path = __webpack_require__(9)
+	var assert = __webpack_require__(49)
+	var isAbsolute = __webpack_require__(60)
+	var globSync = __webpack_require__(61)
+	var common = __webpack_require__(62)
+	var alphasort = common.alphasort
+	var alphasorti = common.alphasorti
+	var setopts = common.setopts
+	var ownProp = common.ownProp
+	var inflight = __webpack_require__(63)
+	var util = __webpack_require__(58)
+	var childrenIgnored = common.childrenIgnored
+	var isIgnored = common.isIgnored
+
+	var once = __webpack_require__(65)
+
+	function glob (pattern, options, cb) {
+	  if (typeof options === 'function') cb = options, options = {}
+	  if (!options) options = {}
+
+	  if (options.sync) {
+	    if (cb)
+	      throw new TypeError('callback provided to sync glob')
+	    return globSync(pattern, options)
+	  }
+
+	  return new Glob(pattern, options, cb)
+	}
+
+	glob.sync = globSync
+	var GlobSync = glob.GlobSync = globSync.GlobSync
+
+	// old api surface
+	glob.glob = glob
+
+	function extend (origin, add) {
+	  if (add === null || typeof add !== 'object') {
+	    return origin
+	  }
+
+	  var keys = Object.keys(add)
+	  var i = keys.length
+	  while (i--) {
+	    origin[keys[i]] = add[keys[i]]
+	  }
+	  return origin
+	}
+
+	glob.hasMagic = function (pattern, options_) {
+	  var options = extend({}, options_)
+	  options.noprocess = true
+
+	  var g = new Glob(pattern, options)
+	  var set = g.minimatch.set
+	  if (set.length > 1)
+	    return true
+
+	  for (var j = 0; j < set[0].length; j++) {
+	    if (typeof set[0][j] !== 'string')
+	      return true
+	  }
+
+	  return false
+	}
+
+	glob.Glob = Glob
+	inherits(Glob, EE)
+	function Glob (pattern, options, cb) {
+	  if (typeof options === 'function') {
+	    cb = options
+	    options = null
+	  }
+
+	  if (options && options.sync) {
+	    if (cb)
+	      throw new TypeError('callback provided to sync glob')
+	    return new GlobSync(pattern, options)
+	  }
+
+	  if (!(this instanceof Glob))
+	    return new Glob(pattern, options, cb)
+
+	  setopts(this, pattern, options)
+	  this._didRealPath = false
+
+	  // process each pattern in the minimatch set
+	  var n = this.minimatch.set.length
+
+	  // The matches are stored as {<filename>: true,...} so that
+	  // duplicates are automagically pruned.
+	  // Later, we do an Object.keys() on these.
+	  // Keep them as a list so we can fill in when nonull is set.
+	  this.matches = new Array(n)
+
+	  if (typeof cb === 'function') {
+	    cb = once(cb)
+	    this.on('error', cb)
+	    this.on('end', function (matches) {
+	      cb(null, matches)
+	    })
+	  }
+
+	  var self = this
+	  var n = this.minimatch.set.length
+	  this._processing = 0
+	  this.matches = new Array(n)
+
+	  this._emitQueue = []
+	  this._processQueue = []
+	  this.paused = false
+
+	  if (this.noprocess)
+	    return this
+
+	  if (n === 0)
+	    return done()
+
+	  var sync = true
+	  for (var i = 0; i < n; i ++) {
+	    this._process(this.minimatch.set[i], i, false, done)
+	  }
+	  sync = false
+
+	  function done () {
+	    --self._processing
+	    if (self._processing <= 0) {
+	      if (sync) {
+	        process.nextTick(function () {
+	          self._finish()
+	        })
+	      } else {
+	        self._finish()
+	      }
+	    }
+	  }
+	}
+
+	Glob.prototype._finish = function () {
+	  assert(this instanceof Glob)
+	  if (this.aborted)
+	    return
+
+	  if (this.realpath && !this._didRealpath)
+	    return this._realpath()
+
+	  common.finish(this)
+	  this.emit('end', this.found)
+	}
+
+	Glob.prototype._realpath = function () {
+	  if (this._didRealpath)
+	    return
+
+	  this._didRealpath = true
+
+	  var n = this.matches.length
+	  if (n === 0)
+	    return this._finish()
+
+	  var self = this
+	  for (var i = 0; i < this.matches.length; i++)
+	    this._realpathSet(i, next)
+
+	  function next () {
+	    if (--n === 0)
+	      self._finish()
+	  }
+	}
+
+	Glob.prototype._realpathSet = function (index, cb) {
+	  var matchset = this.matches[index]
+	  if (!matchset)
+	    return cb()
+
+	  var found = Object.keys(matchset)
+	  var self = this
+	  var n = found.length
+
+	  if (n === 0)
+	    return cb()
+
+	  var set = this.matches[index] = Object.create(null)
+	  found.forEach(function (p, i) {
+	    // If there's a problem with the stat, then it means that
+	    // one or more of the links in the realpath couldn't be
+	    // resolved.  just return the abs value in that case.
+	    p = self._makeAbs(p)
+	    rp.realpath(p, self.realpathCache, function (er, real) {
+	      if (!er)
+	        set[real] = true
+	      else if (er.syscall === 'stat')
+	        set[p] = true
+	      else
+	        self.emit('error', er) // srsly wtf right here
+
+	      if (--n === 0) {
+	        self.matches[index] = set
+	        cb()
+	      }
+	    })
+	  })
+	}
+
+	Glob.prototype._mark = function (p) {
+	  return common.mark(this, p)
+	}
+
+	Glob.prototype._makeAbs = function (f) {
+	  return common.makeAbs(this, f)
+	}
+
+	Glob.prototype.abort = function () {
+	  this.aborted = true
+	  this.emit('abort')
+	}
+
+	Glob.prototype.pause = function () {
+	  if (!this.paused) {
+	    this.paused = true
+	    this.emit('pause')
+	  }
+	}
+
+	Glob.prototype.resume = function () {
+	  if (this.paused) {
+	    this.emit('resume')
+	    this.paused = false
+	    if (this._emitQueue.length) {
+	      var eq = this._emitQueue.slice(0)
+	      this._emitQueue.length = 0
+	      for (var i = 0; i < eq.length; i ++) {
+	        var e = eq[i]
+	        this._emitMatch(e[0], e[1])
+	      }
+	    }
+	    if (this._processQueue.length) {
+	      var pq = this._processQueue.slice(0)
+	      this._processQueue.length = 0
+	      for (var i = 0; i < pq.length; i ++) {
+	        var p = pq[i]
+	        this._processing--
+	        this._process(p[0], p[1], p[2], p[3])
+	      }
+	    }
+	  }
+	}
+
+	Glob.prototype._process = function (pattern, index, inGlobStar, cb) {
+	  assert(this instanceof Glob)
+	  assert(typeof cb === 'function')
+
+	  if (this.aborted)
+	    return
+
+	  this._processing++
+	  if (this.paused) {
+	    this._processQueue.push([pattern, index, inGlobStar, cb])
+	    return
+	  }
+
+	  //console.error('PROCESS %d', this._processing, pattern)
+
+	  // Get the first [n] parts of pattern that are all strings.
+	  var n = 0
+	  while (typeof pattern[n] === 'string') {
+	    n ++
+	  }
+	  // now n is the index of the first one that is *not* a string.
+
+	  // see if there's anything else
+	  var prefix
+	  switch (n) {
+	    // if not, then this is rather simple
+	    case pattern.length:
+	      this._processSimple(pattern.join('/'), index, cb)
+	      return
+
+	    case 0:
+	      // pattern *starts* with some non-trivial item.
+	      // going to readdir(cwd), but not include the prefix in matches.
+	      prefix = null
+	      break
+
+	    default:
+	      // pattern has some string bits in the front.
+	      // whatever it starts with, whether that's 'absolute' like /foo/bar,
+	      // or 'relative' like '../baz'
+	      prefix = pattern.slice(0, n).join('/')
+	      break
+	  }
+
+	  var remain = pattern.slice(n)
+
+	  // get the list of entries.
+	  var read
+	  if (prefix === null)
+	    read = '.'
+	  else if (isAbsolute(prefix) || isAbsolute(pattern.join('/'))) {
+	    if (!prefix || !isAbsolute(prefix))
+	      prefix = '/' + prefix
+	    read = prefix
+	  } else
+	    read = prefix
+
+	  var abs = this._makeAbs(read)
+
+	  //if ignored, skip _processing
+	  if (childrenIgnored(this, read))
+	    return cb()
+
+	  var isGlobStar = remain[0] === minimatch.GLOBSTAR
+	  if (isGlobStar)
+	    this._processGlobStar(prefix, read, abs, remain, index, inGlobStar, cb)
+	  else
+	    this._processReaddir(prefix, read, abs, remain, index, inGlobStar, cb)
+	}
+
+	Glob.prototype._processReaddir = function (prefix, read, abs, remain, index, inGlobStar, cb) {
+	  var self = this
+	  this._readdir(abs, inGlobStar, function (er, entries) {
+	    return self._processReaddir2(prefix, read, abs, remain, index, inGlobStar, entries, cb)
+	  })
+	}
+
+	Glob.prototype._processReaddir2 = function (prefix, read, abs, remain, index, inGlobStar, entries, cb) {
+
+	  // if the abs isn't a dir, then nothing can match!
+	  if (!entries)
+	    return cb()
+
+	  // It will only match dot entries if it starts with a dot, or if
+	  // dot is set.  Stuff like @(.foo|.bar) isn't allowed.
+	  var pn = remain[0]
+	  var negate = !!this.minimatch.negate
+	  var rawGlob = pn._glob
+	  var dotOk = this.dot || rawGlob.charAt(0) === '.'
+
+	  var matchedEntries = []
+	  for (var i = 0; i < entries.length; i++) {
+	    var e = entries[i]
+	    if (e.charAt(0) !== '.' || dotOk) {
+	      var m
+	      if (negate && !prefix) {
+	        m = !e.match(pn)
+	      } else {
+	        m = e.match(pn)
+	      }
+	      if (m)
+	        matchedEntries.push(e)
+	    }
+	  }
+
+	  //console.error('prd2', prefix, entries, remain[0]._glob, matchedEntries)
+
+	  var len = matchedEntries.length
+	  // If there are no matched entries, then nothing matches.
+	  if (len === 0)
+	    return cb()
+
+	  // if this is the last remaining pattern bit, then no need for
+	  // an additional stat *unless* the user has specified mark or
+	  // stat explicitly.  We know they exist, since readdir returned
+	  // them.
+
+	  if (remain.length === 1 && !this.mark && !this.stat) {
+	    if (!this.matches[index])
+	      this.matches[index] = Object.create(null)
+
+	    for (var i = 0; i < len; i ++) {
+	      var e = matchedEntries[i]
+	      if (prefix) {
+	        if (prefix !== '/')
+	          e = prefix + '/' + e
+	        else
+	          e = prefix + e
+	      }
+
+	      if (e.charAt(0) === '/' && !this.nomount) {
+	        e = path.join(this.root, e)
+	      }
+	      this._emitMatch(index, e)
+	    }
+	    // This was the last one, and no stats were needed
+	    return cb()
+	  }
+
+	  // now test all matched entries as stand-ins for that part
+	  // of the pattern.
+	  remain.shift()
+	  for (var i = 0; i < len; i ++) {
+	    var e = matchedEntries[i]
+	    var newPattern
+	    if (prefix) {
+	      if (prefix !== '/')
+	        e = prefix + '/' + e
+	      else
+	        e = prefix + e
+	    }
+	    this._process([e].concat(remain), index, inGlobStar, cb)
+	  }
+	  cb()
+	}
+
+	Glob.prototype._emitMatch = function (index, e) {
+	  if (this.aborted)
+	    return
+
+	  if (this.matches[index][e])
+	    return
+
+	  if (isIgnored(this, e))
+	    return
+
+	  if (this.paused) {
+	    this._emitQueue.push([index, e])
+	    return
+	  }
+
+	  var abs = this._makeAbs(e)
+
+	  if (this.nodir) {
+	    var c = this.cache[abs]
+	    if (c === 'DIR' || Array.isArray(c))
+	      return
+	  }
+
+	  if (this.mark)
+	    e = this._mark(e)
+
+	  this.matches[index][e] = true
+
+	  var st = this.statCache[abs]
+	  if (st)
+	    this.emit('stat', e, st)
+
+	  this.emit('match', e)
+	}
+
+	Glob.prototype._readdirInGlobStar = function (abs, cb) {
+	  if (this.aborted)
+	    return
+
+	  // follow all symlinked directories forever
+	  // just proceed as if this is a non-globstar situation
+	  if (this.follow)
+	    return this._readdir(abs, false, cb)
+
+	  var lstatkey = 'lstat\0' + abs
+	  var self = this
+	  var lstatcb = inflight(lstatkey, lstatcb_)
+
+	  if (lstatcb)
+	    fs.lstat(abs, lstatcb)
+
+	  function lstatcb_ (er, lstat) {
+	    if (er)
+	      return cb()
+
+	    var isSym = lstat.isSymbolicLink()
+	    self.symlinks[abs] = isSym
+
+	    // If it's not a symlink or a dir, then it's definitely a regular file.
+	    // don't bother doing a readdir in that case.
+	    if (!isSym && !lstat.isDirectory()) {
+	      self.cache[abs] = 'FILE'
+	      cb()
+	    } else
+	      self._readdir(abs, false, cb)
+	  }
+	}
+
+	Glob.prototype._readdir = function (abs, inGlobStar, cb) {
+	  if (this.aborted)
+	    return
+
+	  cb = inflight('readdir\0'+abs+'\0'+inGlobStar, cb)
+	  if (!cb)
+	    return
+
+	  //console.error('RD %j %j', +inGlobStar, abs)
+	  if (inGlobStar && !ownProp(this.symlinks, abs))
+	    return this._readdirInGlobStar(abs, cb)
+
+	  if (ownProp(this.cache, abs)) {
+	    var c = this.cache[abs]
+	    if (!c || c === 'FILE')
+	      return cb()
+
+	    if (Array.isArray(c))
+	      return cb(null, c)
+	  }
+
+	  var self = this
+	  fs.readdir(abs, readdirCb(this, abs, cb))
+	}
+
+	function readdirCb (self, abs, cb) {
+	  return function (er, entries) {
+	    if (er)
+	      self._readdirError(abs, er, cb)
+	    else
+	      self._readdirEntries(abs, entries, cb)
+	  }
+	}
+
+	Glob.prototype._readdirEntries = function (abs, entries, cb) {
+	  if (this.aborted)
+	    return
+
+	  // if we haven't asked to stat everything, then just
+	  // assume that everything in there exists, so we can avoid
+	  // having to stat it a second time.
+	  if (!this.mark && !this.stat) {
+	    for (var i = 0; i < entries.length; i ++) {
+	      var e = entries[i]
+	      if (abs === '/')
+	        e = abs + e
+	      else
+	        e = abs + '/' + e
+	      this.cache[e] = true
+	    }
+	  }
+
+	  this.cache[abs] = entries
+	  return cb(null, entries)
+	}
+
+	Glob.prototype._readdirError = function (f, er, cb) {
+	  if (this.aborted)
+	    return
+
+	  // handle errors, and cache the information
+	  switch (er.code) {
+	    case 'ENOTSUP': // https://github.com/isaacs/node-glob/issues/205
+	    case 'ENOTDIR': // totally normal. means it *does* exist.
+	      var abs = this._makeAbs(f)
+	      this.cache[abs] = 'FILE'
+	      if (abs === this.cwdAbs) {
+	        var error = new Error(er.code + ' invalid cwd ' + this.cwd)
+	        error.path = this.cwd
+	        error.code = er.code
+	        this.emit('error', error)
+	        this.abort()
+	      }
+	      break
+
+	    case 'ENOENT': // not terribly unusual
+	    case 'ELOOP':
+	    case 'ENAMETOOLONG':
+	    case 'UNKNOWN':
+	      this.cache[this._makeAbs(f)] = false
+	      break
+
+	    default: // some unusual error.  Treat as failure.
+	      this.cache[this._makeAbs(f)] = false
+	      if (this.strict) {
+	        this.emit('error', er)
+	        // If the error is handled, then we abort
+	        // if not, we threw out of here
+	        this.abort()
+	      }
+	      if (!this.silent)
+	        console.error('glob error', er)
+	      break
+	  }
+
+	  return cb()
+	}
+
+	Glob.prototype._processGlobStar = function (prefix, read, abs, remain, index, inGlobStar, cb) {
+	  var self = this
+	  this._readdir(abs, inGlobStar, function (er, entries) {
+	    self._processGlobStar2(prefix, read, abs, remain, index, inGlobStar, entries, cb)
+	  })
+	}
+
+
+	Glob.prototype._processGlobStar2 = function (prefix, read, abs, remain, index, inGlobStar, entries, cb) {
+	  //console.error('pgs2', prefix, remain[0], entries)
+
+	  // no entries means not a dir, so it can never have matches
+	  // foo.txt/** doesn't match foo.txt
+	  if (!entries)
+	    return cb()
+
+	  // test without the globstar, and with every child both below
+	  // and replacing the globstar.
+	  var remainWithoutGlobStar = remain.slice(1)
+	  var gspref = prefix ? [ prefix ] : []
+	  var noGlobStar = gspref.concat(remainWithoutGlobStar)
+
+	  // the noGlobStar pattern exits the inGlobStar state
+	  this._process(noGlobStar, index, false, cb)
+
+	  var isSym = this.symlinks[abs]
+	  var len = entries.length
+
+	  // If it's a symlink, and we're in a globstar, then stop
+	  if (isSym && inGlobStar)
+	    return cb()
+
+	  for (var i = 0; i < len; i++) {
+	    var e = entries[i]
+	    if (e.charAt(0) === '.' && !this.dot)
+	      continue
+
+	    // these two cases enter the inGlobStar state
+	    var instead = gspref.concat(entries[i], remainWithoutGlobStar)
+	    this._process(instead, index, true, cb)
+
+	    var below = gspref.concat(entries[i], remain)
+	    this._process(below, index, true, cb)
+	  }
+
+	  cb()
+	}
+
+	Glob.prototype._processSimple = function (prefix, index, cb) {
+	  // XXX review this.  Shouldn't it be doing the mounting etc
+	  // before doing stat?  kinda weird?
+	  var self = this
+	  this._stat(prefix, function (er, exists) {
+	    self._processSimple2(prefix, index, er, exists, cb)
+	  })
+	}
+	Glob.prototype._processSimple2 = function (prefix, index, er, exists, cb) {
+
+	  //console.error('ps2', prefix, exists)
+
+	  if (!this.matches[index])
+	    this.matches[index] = Object.create(null)
+
+	  // If it doesn't exist, then just mark the lack of results
+	  if (!exists)
+	    return cb()
+
+	  if (prefix && isAbsolute(prefix) && !this.nomount) {
+	    var trail = /[\/\\]$/.test(prefix)
+	    if (prefix.charAt(0) === '/') {
+	      prefix = path.join(this.root, prefix)
+	    } else {
+	      prefix = path.resolve(this.root, prefix)
+	      if (trail)
+	        prefix += '/'
+	    }
+	  }
+
+	  if (process.platform === 'win32')
+	    prefix = prefix.replace(/\\/g, '/')
+
+	  // Mark this as a match
+	  this._emitMatch(index, prefix)
+	  cb()
+	}
+
+	// Returns either 'DIR', 'FILE', or false
+	Glob.prototype._stat = function (f, cb) {
+	  var abs = this._makeAbs(f)
+	  var needDir = f.slice(-1) === '/'
+
+	  if (f.length > this.maxLength)
+	    return cb()
+
+	  if (!this.stat && ownProp(this.cache, abs)) {
+	    var c = this.cache[abs]
+
+	    if (Array.isArray(c))
+	      c = 'DIR'
+
+	    // It exists, but maybe not how we need it
+	    if (!needDir || c === 'DIR')
+	      return cb(null, c)
+
+	    if (needDir && c === 'FILE')
+	      return cb()
+
+	    // otherwise we have to stat, because maybe c=true
+	    // if we know it exists, but not what it is.
+	  }
+
+	  var exists
+	  var stat = this.statCache[abs]
+	  if (stat !== undefined) {
+	    if (stat === false)
+	      return cb(null, stat)
+	    else {
+	      var type = stat.isDirectory() ? 'DIR' : 'FILE'
+	      if (needDir && type === 'FILE')
+	        return cb()
+	      else
+	        return cb(null, type, stat)
+	    }
+	  }
+
+	  var self = this
+	  var statcb = inflight('stat\0' + abs, lstatcb_)
+	  if (statcb)
+	    fs.lstat(abs, statcb)
+
+	  function lstatcb_ (er, lstat) {
+	    if (lstat && lstat.isSymbolicLink()) {
+	      // If it's a symlink, then treat it as the target, unless
+	      // the target does not exist, then treat it as a file.
+	      return fs.stat(abs, function (er, stat) {
+	        if (er)
+	          self._stat2(f, abs, null, lstat, cb)
+	        else
+	          self._stat2(f, abs, er, stat, cb)
+	      })
+	    } else {
+	      self._stat2(f, abs, er, lstat, cb)
+	    }
+	  }
+	}
+
+	Glob.prototype._stat2 = function (f, abs, er, stat, cb) {
+	  if (er) {
+	    this.statCache[abs] = false
+	    return cb()
+	  }
+
+	  var needDir = f.slice(-1) === '/'
+	  this.statCache[abs] = stat
+
+	  if (abs.slice(-1) === '/' && !stat.isDirectory())
+	    return cb(null, false, stat)
+
+	  var c = stat.isDirectory() ? 'DIR' : 'FILE'
+	  this.cache[abs] = this.cache[abs] || c
+
+	  if (needDir && c !== 'DIR')
+	    return cb()
+
+	  return cb(null, c, stat)
+	}
+
+
+/***/ },
+/* 51 */
+/***/ function(module, exports, __webpack_require__) {
+
+	module.exports = realpath
+	realpath.realpath = realpath
+	realpath.sync = realpathSync
+	realpath.realpathSync = realpathSync
+	realpath.monkeypatch = monkeypatch
+	realpath.unmonkeypatch = unmonkeypatch
+
+	var fs = __webpack_require__(7)
+	var origRealpath = fs.realpath
+	var origRealpathSync = fs.realpathSync
+
+	var version = process.version
+	var ok = /^v[0-5]\./.test(version)
+	var old = __webpack_require__(52)
+
+	function newError (er) {
+	  return er && er.syscall === 'realpath' && (
+	    er.code === 'ELOOP' ||
+	    er.code === 'ENOMEM' ||
+	    er.code === 'ENAMETOOLONG'
+	  )
+	}
+
+	function realpath (p, cache, cb) {
+	  if (ok) {
+	    return origRealpath(p, cache, cb)
+	  }
+
+	  if (typeof cache === 'function') {
+	    cb = cache
+	    cache = null
+	  }
+	  origRealpath(p, cache, function (er, result) {
+	    if (newError(er)) {
+	      old.realpath(p, cache, cb)
+	    } else {
+	      cb(er, result)
+	    }
+	  })
+	}
+
+	function realpathSync (p, cache) {
+	  if (ok) {
+	    return origRealpathSync(p, cache)
+	  }
+
+	  try {
+	    return origRealpathSync(p, cache)
+	  } catch (er) {
+	    if (newError(er)) {
+	      return old.realpathSync(p, cache)
+	    } else {
+	      throw er
+	    }
+	  }
+	}
+
+	function monkeypatch () {
+	  fs.realpath = realpath
+	  fs.realpathSync = realpathSync
+	}
+
+	function unmonkeypatch () {
+	  fs.realpath = origRealpath
+	  fs.realpathSync = origRealpathSync
+	}
+
+
+/***/ },
+/* 52 */
+/***/ function(module, exports, __webpack_require__) {
+
+	// Copyright Joyent, Inc. and other Node contributors.
+	//
+	// Permission is hereby granted, free of charge, to any person obtaining a
+	// copy of this software and associated documentation files (the
+	// "Software"), to deal in the Software without restriction, including
+	// without limitation the rights to use, copy, modify, merge, publish,
+	// distribute, sublicense, and/or sell copies of the Software, and to permit
+	// persons to whom the Software is furnished to do so, subject to the
+	// following conditions:
+	//
+	// The above copyright notice and this permission notice shall be included
+	// in all copies or substantial portions of the Software.
+	//
+	// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+	// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+	// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+	// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+	// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+	// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+	// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+	var pathModule = __webpack_require__(9);
+	var isWindows = process.platform === 'win32';
+	var fs = __webpack_require__(7);
+
+	// JavaScript implementation of realpath, ported from node pre-v6
+
+	var DEBUG = process.env.NODE_DEBUG && /fs/.test(process.env.NODE_DEBUG);
+
+	function rethrow() {
+	  // Only enable in debug mode. A backtrace uses ~1000 bytes of heap space and
+	  // is fairly slow to generate.
+	  var callback;
+	  if (DEBUG) {
+	    var backtrace = new Error;
+	    callback = debugCallback;
+	  } else
+	    callback = missingCallback;
+
+	  return callback;
+
+	  function debugCallback(err) {
+	    if (err) {
+	      backtrace.message = err.message;
+	      err = backtrace;
+	      missingCallback(err);
+	    }
+	  }
+
+	  function missingCallback(err) {
+	    if (err) {
+	      if (process.throwDeprecation)
+	        throw err;  // Forgot a callback but don't know where? Use NODE_DEBUG=fs
+	      else if (!process.noDeprecation) {
+	        var msg = 'fs: missing callback ' + (err.stack || err.message);
+	        if (process.traceDeprecation)
+	          console.trace(msg);
+	        else
+	          console.error(msg);
+	      }
+	    }
+	  }
+	}
+
+	function maybeCallback(cb) {
+	  return typeof cb === 'function' ? cb : rethrow();
+	}
+
+	var normalize = pathModule.normalize;
+
+	// Regexp that finds the next partion of a (partial) path
+	// result is [base_with_slash, base], e.g. ['somedir/', 'somedir']
+	if (isWindows) {
+	  var nextPartRe = /(.*?)(?:[\/\\]+|$)/g;
+	} else {
+	  var nextPartRe = /(.*?)(?:[\/]+|$)/g;
+	}
+
+	// Regex to find the device root, including trailing slash. E.g. 'c:\\'.
+	if (isWindows) {
+	  var splitRootRe = /^(?:[a-zA-Z]:|[\\\/]{2}[^\\\/]+[\\\/][^\\\/]+)?[\\\/]*/;
+	} else {
+	  var splitRootRe = /^[\/]*/;
+	}
+
+	exports.realpathSync = function realpathSync(p, cache) {
+	  // make p is absolute
+	  p = pathModule.resolve(p);
+
+	  if (cache && Object.prototype.hasOwnProperty.call(cache, p)) {
+	    return cache[p];
+	  }
+
+	  var original = p,
+	      seenLinks = {},
+	      knownHard = {};
+
+	  // current character position in p
+	  var pos;
+	  // the partial path so far, including a trailing slash if any
+	  var current;
+	  // the partial path without a trailing slash (except when pointing at a root)
+	  var base;
+	  // the partial path scanned in the previous round, with slash
+	  var previous;
+
+	  start();
+
+	  function start() {
+	    // Skip over roots
+	    var m = splitRootRe.exec(p);
+	    pos = m[0].length;
+	    current = m[0];
+	    base = m[0];
+	    previous = '';
+
+	    // On windows, check that the root exists. On unix there is no need.
+	    if (isWindows && !knownHard[base]) {
+	      fs.lstatSync(base);
+	      knownHard[base] = true;
+	    }
+	  }
+
+	  // walk down the path, swapping out linked pathparts for their real
+	  // values
+	  // NB: p.length changes.
+	  while (pos < p.length) {
+	    // find the next part
+	    nextPartRe.lastIndex = pos;
+	    var result = nextPartRe.exec(p);
+	    previous = current;
+	    current += result[0];
+	    base = previous + result[1];
+	    pos = nextPartRe.lastIndex;
+
+	    // continue if not a symlink
+	    if (knownHard[base] || (cache && cache[base] === base)) {
+	      continue;
+	    }
+
+	    var resolvedLink;
+	    if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
+	      // some known symbolic link.  no need to stat again.
+	      resolvedLink = cache[base];
+	    } else {
+	      var stat = fs.lstatSync(base);
+	      if (!stat.isSymbolicLink()) {
+	        knownHard[base] = true;
+	        if (cache) cache[base] = base;
+	        continue;
+	      }
+
+	      // read the link if it wasn't read before
+	      // dev/ino always return 0 on windows, so skip the check.
+	      var linkTarget = null;
+	      if (!isWindows) {
+	        var id = stat.dev.toString(32) + ':' + stat.ino.toString(32);
+	        if (seenLinks.hasOwnProperty(id)) {
+	          linkTarget = seenLinks[id];
+	        }
+	      }
+	      if (linkTarget === null) {
+	        fs.statSync(base);
+	        linkTarget = fs.readlinkSync(base);
+	      }
+	      resolvedLink = pathModule.resolve(previous, linkTarget);
+	      // track this, if given a cache.
+	      if (cache) cache[base] = resolvedLink;
+	      if (!isWindows) seenLinks[id] = linkTarget;
+	    }
+
+	    // resolve the link, then start over
+	    p = pathModule.resolve(resolvedLink, p.slice(pos));
+	    start();
+	  }
+
+	  if (cache) cache[original] = p;
+
+	  return p;
+	};
+
+
+	exports.realpath = function realpath(p, cache, cb) {
+	  if (typeof cb !== 'function') {
+	    cb = maybeCallback(cache);
+	    cache = null;
+	  }
+
+	  // make p is absolute
+	  p = pathModule.resolve(p);
+
+	  if (cache && Object.prototype.hasOwnProperty.call(cache, p)) {
+	    return process.nextTick(cb.bind(null, null, cache[p]));
+	  }
+
+	  var original = p,
+	      seenLinks = {},
+	      knownHard = {};
+
+	  // current character position in p
+	  var pos;
+	  // the partial path so far, including a trailing slash if any
+	  var current;
+	  // the partial path without a trailing slash (except when pointing at a root)
+	  var base;
+	  // the partial path scanned in the previous round, with slash
+	  var previous;
+
+	  start();
+
+	  function start() {
+	    // Skip over roots
+	    var m = splitRootRe.exec(p);
+	    pos = m[0].length;
+	    current = m[0];
+	    base = m[0];
+	    previous = '';
+
+	    // On windows, check that the root exists. On unix there is no need.
+	    if (isWindows && !knownHard[base]) {
+	      fs.lstat(base, function(err) {
+	        if (err) return cb(err);
+	        knownHard[base] = true;
+	        LOOP();
+	      });
+	    } else {
+	      process.nextTick(LOOP);
+	    }
+	  }
+
+	  // walk down the path, swapping out linked pathparts for their real
+	  // values
+	  function LOOP() {
+	    // stop if scanned past end of path
+	    if (pos >= p.length) {
+	      if (cache) cache[original] = p;
+	      return cb(null, p);
+	    }
+
+	    // find the next part
+	    nextPartRe.lastIndex = pos;
+	    var result = nextPartRe.exec(p);
+	    previous = current;
+	    current += result[0];
+	    base = previous + result[1];
+	    pos = nextPartRe.lastIndex;
+
+	    // continue if not a symlink
+	    if (knownHard[base] || (cache && cache[base] === base)) {
+	      return process.nextTick(LOOP);
+	    }
+
+	    if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
+	      // known symbolic link.  no need to stat again.
+	      return gotResolvedLink(cache[base]);
+	    }
+
+	    return fs.lstat(base, gotStat);
+	  }
+
+	  function gotStat(err, stat) {
+	    if (err) return cb(err);
+
+	    // if not a symlink, skip to the next path part
+	    if (!stat.isSymbolicLink()) {
+	      knownHard[base] = true;
+	      if (cache) cache[base] = base;
+	      return process.nextTick(LOOP);
+	    }
+
+	    // stat & read the link if not read before
+	    // call gotTarget as soon as the link target is known
+	    // dev/ino always return 0 on windows, so skip the check.
+	    if (!isWindows) {
+	      var id = stat.dev.toString(32) + ':' + stat.ino.toString(32);
+	      if (seenLinks.hasOwnProperty(id)) {
+	        return gotTarget(null, seenLinks[id], base);
+	      }
+	    }
+	    fs.stat(base, function(err) {
+	      if (err) return cb(err);
+
+	      fs.readlink(base, function(err, target) {
+	        if (!isWindows) seenLinks[id] = target;
+	        gotTarget(err, target);
+	      });
+	    });
+	  }
+
+	  function gotTarget(err, target, base) {
+	    if (err) return cb(err);
+
+	    var resolvedLink = pathModule.resolve(previous, target);
+	    if (cache) cache[base] = resolvedLink;
+	    gotResolvedLink(resolvedLink);
+	  }
+
+	  function gotResolvedLink(resolvedLink) {
+	    // resolve the link, then start over
+	    p = pathModule.resolve(resolvedLink, p.slice(pos));
+	    start();
+	  }
+	};
+
+
+/***/ },
+/* 53 */
+/***/ function(module, exports, __webpack_require__) {
+
+	module.exports = minimatch
+	minimatch.Minimatch = Minimatch
+
+	var path = { sep: '/' }
+	try {
+	  path = __webpack_require__(9)
+	} catch (er) {}
+
+	var GLOBSTAR = minimatch.GLOBSTAR = Minimatch.GLOBSTAR = {}
+	var expand = __webpack_require__(54)
+
+	// any single thing other than /
+	// don't need to escape / when using new RegExp()
+	var qmark = '[^/]'
+
+	// * => any number of characters
+	var star = qmark + '*?'
+
+	// ** when dots are allowed.  Anything goes, except .. and .
+	// not (^ or / followed by one or two dots followed by $ or /),
+	// followed by anything, any number of times.
+	var twoStarDot = '(?:(?!(?:\\\/|^)(?:\\.{1,2})($|\\\/)).)*?'
+
+	// not a ^ or / followed by a dot,
+	// followed by anything, any number of times.
+	var twoStarNoDot = '(?:(?!(?:\\\/|^)\\.).)*?'
+
+	// characters that need to be escaped in RegExp.
+	var reSpecials = charSet('().*{}+?[]^$\\!')
+
+	// "abc" -> { a:true, b:true, c:true }
+	function charSet (s) {
+	  return s.split('').reduce(function (set, c) {
+	    set[c] = true
+	    return set
+	  }, {})
+	}
+
+	// normalizes slashes.
+	var slashSplit = /\/+/
+
+	minimatch.filter = filter
+	function filter (pattern, options) {
+	  options = options || {}
+	  return function (p, i, list) {
+	    return minimatch(p, pattern, options)
+	  }
+	}
+
+	function ext (a, b) {
+	  a = a || {}
+	  b = b || {}
+	  var t = {}
+	  Object.keys(b).forEach(function (k) {
+	    t[k] = b[k]
+	  })
+	  Object.keys(a).forEach(function (k) {
+	    t[k] = a[k]
+	  })
+	  return t
+	}
+
+	minimatch.defaults = function (def) {
+	  if (!def || !Object.keys(def).length) return minimatch
+
+	  var orig = minimatch
+
+	  var m = function minimatch (p, pattern, options) {
+	    return orig.minimatch(p, pattern, ext(def, options))
+	  }
+
+	  m.Minimatch = function Minimatch (pattern, options) {
+	    return new orig.Minimatch(pattern, ext(def, options))
+	  }
+
+	  return m
+	}
+
+	Minimatch.defaults = function (def) {
+	  if (!def || !Object.keys(def).length) return Minimatch
+	  return minimatch.defaults(def).Minimatch
+	}
+
+	function minimatch (p, pattern, options) {
+	  if (typeof pattern !== 'string') {
+	    throw new TypeError('glob pattern string required')
+	  }
+
+	  if (!options) options = {}
+
+	  // shortcut: comments match nothing.
+	  if (!options.nocomment && pattern.charAt(0) === '#') {
+	    return false
+	  }
+
+	  // "" only matches ""
+	  if (pattern.trim() === '') return p === ''
+
+	  return new Minimatch(pattern, options).match(p)
+	}
+
+	function Minimatch (pattern, options) {
+	  if (!(this instanceof Minimatch)) {
+	    return new Minimatch(pattern, options)
+	  }
+
+	  if (typeof pattern !== 'string') {
+	    throw new TypeError('glob pattern string required')
+	  }
+
+	  if (!options) options = {}
+	  pattern = pattern.trim()
+
+	  // windows support: need to use /, not \
+	  if (path.sep !== '/') {
+	    pattern = pattern.split(path.sep).join('/')
+	  }
+
+	  this.options = options
+	  this.set = []
+	  this.pattern = pattern
+	  this.regexp = null
+	  this.negate = false
+	  this.comment = false
+	  this.empty = false
+
+	  // make the set of regexps etc.
+	  this.make()
+	}
+
+	Minimatch.prototype.debug = function () {}
+
+	Minimatch.prototype.make = make
+	function make () {
+	  // don't do it more than once.
+	  if (this._made) return
+
+	  var pattern = this.pattern
+	  var options = this.options
+
+	  // empty patterns and comments match nothing.
+	  if (!options.nocomment && pattern.charAt(0) === '#') {
+	    this.comment = true
+	    return
+	  }
+	  if (!pattern) {
+	    this.empty = true
+	    return
+	  }
+
+	  // step 1: figure out negation, etc.
+	  this.parseNegate()
+
+	  // step 2: expand braces
+	  var set = this.globSet = this.braceExpand()
+
+	  if (options.debug) this.debug = console.error
+
+	  this.debug(this.pattern, set)
+
+	  // step 3: now we have a set, so turn each one into a series of path-portion
+	  // matching patterns.
+	  // These will be regexps, except in the case of "**", which is
+	  // set to the GLOBSTAR object for globstar behavior,
+	  // and will not contain any / characters
+	  set = this.globParts = set.map(function (s) {
+	    return s.split(slashSplit)
+	  })
+
+	  this.debug(this.pattern, set)
+
+	  // glob --> regexps
+	  set = set.map(function (s, si, set) {
+	    return s.map(this.parse, this)
+	  }, this)
+
+	  this.debug(this.pattern, set)
+
+	  // filter out everything that didn't compile properly.
+	  set = set.filter(function (s) {
+	    return s.indexOf(false) === -1
+	  })
+
+	  this.debug(this.pattern, set)
+
+	  this.set = set
+	}
+
+	Minimatch.prototype.parseNegate = parseNegate
+	function parseNegate () {
+	  var pattern = this.pattern
+	  var negate = false
+	  var options = this.options
+	  var negateOffset = 0
+
+	  if (options.nonegate) return
+
+	  for (var i = 0, l = pattern.length
+	    ; i < l && pattern.charAt(i) === '!'
+	    ; i++) {
+	    negate = !negate
+	    negateOffset++
+	  }
+
+	  if (negateOffset) this.pattern = pattern.substr(negateOffset)
+	  this.negate = negate
+	}
+
+	// Brace expansion:
+	// a{b,c}d -> abd acd
+	// a{b,}c -> abc ac
+	// a{0..3}d -> a0d a1d a2d a3d
+	// a{b,c{d,e}f}g -> abg acdfg acefg
+	// a{b,c}d{e,f}g -> abdeg acdeg abdeg abdfg
+	//
+	// Invalid sets are not expanded.
+	// a{2..}b -> a{2..}b
+	// a{b}c -> a{b}c
+	minimatch.braceExpand = function (pattern, options) {
+	  return braceExpand(pattern, options)
+	}
+
+	Minimatch.prototype.braceExpand = braceExpand
+
+	function braceExpand (pattern, options) {
+	  if (!options) {
+	    if (this instanceof Minimatch) {
+	      options = this.options
+	    } else {
+	      options = {}
+	    }
+	  }
+
+	  pattern = typeof pattern === 'undefined'
+	    ? this.pattern : pattern
+
+	  if (typeof pattern === 'undefined') {
+	    throw new Error('undefined pattern')
+	  }
+
+	  if (options.nobrace ||
+	    !pattern.match(/\{.*\}/)) {
+	    // shortcut. no need to expand.
+	    return [pattern]
+	  }
+
+	  return expand(pattern)
+	}
+
+	// parse a component of the expanded set.
+	// At this point, no pattern may contain "/" in it
+	// so we're going to return a 2d array, where each entry is the full
+	// pattern, split on '/', and then turned into a regular expression.
+	// A regexp is made at the end which joins each array with an
+	// escaped /, and another full one which joins each regexp with |.
+	//
+	// Following the lead of Bash 4.1, note that "**" only has special meaning
+	// when it is the *only* thing in a path portion.  Otherwise, any series
+	// of * is equivalent to a single *.  Globstar behavior is enabled by
+	// default, and can be disabled by setting options.noglobstar.
+	Minimatch.prototype.parse = parse
+	var SUBPARSE = {}
+	function parse (pattern, isSub) {
+	  var options = this.options
+
+	  // shortcuts
+	  if (!options.noglobstar && pattern === '**') return GLOBSTAR
+	  if (pattern === '') return ''
+
+	  var re = ''
+	  var hasMagic = !!options.nocase
+	  var escaping = false
+	  // ? => one single character
+	  var patternListStack = []
+	  var negativeLists = []
+	  var plType
+	  var stateChar
+	  var inClass = false
+	  var reClassStart = -1
+	  var classStart = -1
+	  // . and .. never match anything that doesn't start with .,
+	  // even when options.dot is set.
+	  var patternStart = pattern.charAt(0) === '.' ? '' // anything
+	  // not (start or / followed by . or .. followed by / or end)
+	  : options.dot ? '(?!(?:^|\\\/)\\.{1,2}(?:$|\\\/))'
+	  : '(?!\\.)'
+	  var self = this
+
+	  function clearStateChar () {
+	    if (stateChar) {
+	      // we had some state-tracking character
+	      // that wasn't consumed by this pass.
+	      switch (stateChar) {
+	        case '*':
+	          re += star
+	          hasMagic = true
+	        break
+	        case '?':
+	          re += qmark
+	          hasMagic = true
+	        break
+	        default:
+	          re += '\\' + stateChar
+	        break
+	      }
+	      self.debug('clearStateChar %j %j', stateChar, re)
+	      stateChar = false
+	    }
+	  }
+
+	  for (var i = 0, len = pattern.length, c
+	    ; (i < len) && (c = pattern.charAt(i))
+	    ; i++) {
+	    this.debug('%s\t%s %s %j', pattern, i, re, c)
+
+	    // skip over any that are escaped.
+	    if (escaping && reSpecials[c]) {
+	      re += '\\' + c
+	      escaping = false
+	      continue
+	    }
+
+	    switch (c) {
+	      case '/':
+	        // completely not allowed, even escaped.
+	        // Should already be path-split by now.
+	        return false
+
+	      case '\\':
+	        clearStateChar()
+	        escaping = true
+	      continue
+
+	      // the various stateChar values
+	      // for the "extglob" stuff.
+	      case '?':
+	      case '*':
+	      case '+':
+	      case '@':
+	      case '!':
+	        this.debug('%s\t%s %s %j <-- stateChar', pattern, i, re, c)
+
+	        // all of those are literals inside a class, except that
+	        // the glob [!a] means [^a] in regexp
+	        if (inClass) {
+	          this.debug('  in class')
+	          if (c === '!' && i === classStart + 1) c = '^'
+	          re += c
+	          continue
+	        }
+
+	        // if we already have a stateChar, then it means
+	        // that there was something like ** or +? in there.
+	        // Handle the stateChar, then proceed with this one.
+	        self.debug('call clearStateChar %j', stateChar)
+	        clearStateChar()
+	        stateChar = c
+	        // if extglob is disabled, then +(asdf|foo) isn't a thing.
+	        // just clear the statechar *now*, rather than even diving into
+	        // the patternList stuff.
+	        if (options.noext) clearStateChar()
+	      continue
+
+	      case '(':
+	        if (inClass) {
+	          re += '('
+	          continue
+	        }
+
+	        if (!stateChar) {
+	          re += '\\('
+	          continue
+	        }
+
+	        plType = stateChar
+	        patternListStack.push({
+	          type: plType,
+	          start: i - 1,
+	          reStart: re.length
+	        })
+	        // negation is (?:(?!js)[^/]*)
+	        re += stateChar === '!' ? '(?:(?!(?:' : '(?:'
+	        this.debug('plType %j %j', stateChar, re)
+	        stateChar = false
+	      continue
+
+	      case ')':
+	        if (inClass || !patternListStack.length) {
+	          re += '\\)'
+	          continue
+	        }
+
+	        clearStateChar()
+	        hasMagic = true
+	        re += ')'
+	        var pl = patternListStack.pop()
+	        plType = pl.type
+	        // negation is (?:(?!js)[^/]*)
+	        // The others are (?:<pattern>)<type>
+	        switch (plType) {
+	          case '!':
+	            negativeLists.push(pl)
+	            re += ')[^/]*?)'
+	            pl.reEnd = re.length
+	            break
+	          case '?':
+	          case '+':
+	          case '*':
+	            re += plType
+	            break
+	          case '@': break // the default anyway
+	        }
+	      continue
+
+	      case '|':
+	        if (inClass || !patternListStack.length || escaping) {
+	          re += '\\|'
+	          escaping = false
+	          continue
+	        }
+
+	        clearStateChar()
+	        re += '|'
+	      continue
+
+	      // these are mostly the same in regexp and glob
+	      case '[':
+	        // swallow any state-tracking char before the [
+	        clearStateChar()
+
+	        if (inClass) {
+	          re += '\\' + c
+	          continue
+	        }
+
+	        inClass = true
+	        classStart = i
+	        reClassStart = re.length
+	        re += c
+	      continue
+
+	      case ']':
+	        //  a right bracket shall lose its special
+	        //  meaning and represent itself in
+	        //  a bracket expression if it occurs
+	        //  first in the list.  -- POSIX.2 2.8.3.2
+	        if (i === classStart + 1 || !inClass) {
+	          re += '\\' + c
+	          escaping = false
+	          continue
+	        }
+
+	        // handle the case where we left a class open.
+	        // "[z-a]" is valid, equivalent to "\[z-a\]"
+	        if (inClass) {
+	          // split where the last [ was, make sure we don't have
+	          // an invalid re. if so, re-walk the contents of the
+	          // would-be class to re-translate any characters that
+	          // were passed through as-is
+	          // TODO: It would probably be faster to determine this
+	          // without a try/catch and a new RegExp, but it's tricky
+	          // to do safely.  For now, this is safe and works.
+	          var cs = pattern.substring(classStart + 1, i)
+	          try {
+	            RegExp('[' + cs + ']')
+	          } catch (er) {
+	            // not a valid class!
+	            var sp = this.parse(cs, SUBPARSE)
+	            re = re.substr(0, reClassStart) + '\\[' + sp[0] + '\\]'
+	            hasMagic = hasMagic || sp[1]
+	            inClass = false
+	            continue
+	          }
+	        }
+
+	        // finish up the class.
+	        hasMagic = true
+	        inClass = false
+	        re += c
+	      continue
+
+	      default:
+	        // swallow any state char that wasn't consumed
+	        clearStateChar()
+
+	        if (escaping) {
+	          // no need
+	          escaping = false
+	        } else if (reSpecials[c]
+	          && !(c === '^' && inClass)) {
+	          re += '\\'
+	        }
+
+	        re += c
+
+	    } // switch
+	  } // for
+
+	  // handle the case where we left a class open.
+	  // "[abc" is valid, equivalent to "\[abc"
+	  if (inClass) {
+	    // split where the last [ was, and escape it
+	    // this is a huge pita.  We now have to re-walk
+	    // the contents of the would-be class to re-translate
+	    // any characters that were passed through as-is
+	    cs = pattern.substr(classStart + 1)
+	    sp = this.parse(cs, SUBPARSE)
+	    re = re.substr(0, reClassStart) + '\\[' + sp[0]
+	    hasMagic = hasMagic || sp[1]
+	  }
+
+	  // handle the case where we had a +( thing at the *end*
+	  // of the pattern.
+	  // each pattern list stack adds 3 chars, and we need to go through
+	  // and escape any | chars that were passed through as-is for the regexp.
+	  // Go through and escape them, taking care not to double-escape any
+	  // | chars that were already escaped.
+	  for (pl = patternListStack.pop(); pl; pl = patternListStack.pop()) {
+	    var tail = re.slice(pl.reStart + 3)
+	    // maybe some even number of \, then maybe 1 \, followed by a |
+	    tail = tail.replace(/((?:\\{2})*)(\\?)\|/g, function (_, $1, $2) {
+	      if (!$2) {
+	        // the | isn't already escaped, so escape it.
+	        $2 = '\\'
+	      }
+
+	      // need to escape all those slashes *again*, without escaping the
+	      // one that we need for escaping the | character.  As it works out,
+	      // escaping an even number of slashes can be done by simply repeating
+	      // it exactly after itself.  That's why this trick works.
+	      //
+	      // I am sorry that you have to see this.
+	      return $1 + $1 + $2 + '|'
+	    })
+
+	    this.debug('tail=%j\n   %s', tail, tail)
+	    var t = pl.type === '*' ? star
+	      : pl.type === '?' ? qmark
+	      : '\\' + pl.type
+
+	    hasMagic = true
+	    re = re.slice(0, pl.reStart) + t + '\\(' + tail
+	  }
+
+	  // handle trailing things that only matter at the very end.
+	  clearStateChar()
+	  if (escaping) {
+	    // trailing \\
+	    re += '\\\\'
+	  }
+
+	  // only need to apply the nodot start if the re starts with
+	  // something that could conceivably capture a dot
+	  var addPatternStart = false
+	  switch (re.charAt(0)) {
+	    case '.':
+	    case '[':
+	    case '(': addPatternStart = true
+	  }
+
+	  // Hack to work around lack of negative lookbehind in JS
+	  // A pattern like: *.!(x).!(y|z) needs to ensure that a name
+	  // like 'a.xyz.yz' doesn't match.  So, the first negative
+	  // lookahead, has to look ALL the way ahead, to the end of
+	  // the pattern.
+	  for (var n = negativeLists.length - 1; n > -1; n--) {
+	    var nl = negativeLists[n]
+
+	    var nlBefore = re.slice(0, nl.reStart)
+	    var nlFirst = re.slice(nl.reStart, nl.reEnd - 8)
+	    var nlLast = re.slice(nl.reEnd - 8, nl.reEnd)
+	    var nlAfter = re.slice(nl.reEnd)
+
+	    nlLast += nlAfter
+
+	    // Handle nested stuff like *(*.js|!(*.json)), where open parens
+	    // mean that we should *not* include the ) in the bit that is considered
+	    // "after" the negated section.
+	    var openParensBefore = nlBefore.split('(').length - 1
+	    var cleanAfter = nlAfter
+	    for (i = 0; i < openParensBefore; i++) {
+	      cleanAfter = cleanAfter.replace(/\)[+*?]?/, '')
+	    }
+	    nlAfter = cleanAfter
+
+	    var dollar = ''
+	    if (nlAfter === '' && isSub !== SUBPARSE) {
+	      dollar = '$'
+	    }
+	    var newRe = nlBefore + nlFirst + nlAfter + dollar + nlLast
+	    re = newRe
+	  }
+
+	  // if the re is not "" at this point, then we need to make sure
+	  // it doesn't match against an empty path part.
+	  // Otherwise a/* will match a/, which it should not.
+	  if (re !== '' && hasMagic) {
+	    re = '(?=.)' + re
+	  }
+
+	  if (addPatternStart) {
+	    re = patternStart + re
+	  }
+
+	  // parsing just a piece of a larger pattern.
+	  if (isSub === SUBPARSE) {
+	    return [re, hasMagic]
+	  }
+
+	  // skip the regexp for non-magical patterns
+	  // unescape anything in it, though, so that it'll be
+	  // an exact match against a file etc.
+	  if (!hasMagic) {
+	    return globUnescape(pattern)
+	  }
+
+	  var flags = options.nocase ? 'i' : ''
+	  var regExp = new RegExp('^' + re + '$', flags)
+
+	  regExp._glob = pattern
+	  regExp._src = re
+
+	  return regExp
+	}
+
+	minimatch.makeRe = function (pattern, options) {
+	  return new Minimatch(pattern, options || {}).makeRe()
+	}
+
+	Minimatch.prototype.makeRe = makeRe
+	function makeRe () {
+	  if (this.regexp || this.regexp === false) return this.regexp
+
+	  // at this point, this.set is a 2d array of partial
+	  // pattern strings, or "**".
+	  //
+	  // It's better to use .match().  This function shouldn't
+	  // be used, really, but it's pretty convenient sometimes,
+	  // when you just want to work with a regex.
+	  var set = this.set
+
+	  if (!set.length) {
+	    this.regexp = false
+	    return this.regexp
+	  }
+	  var options = this.options
+
+	  var twoStar = options.noglobstar ? star
+	    : options.dot ? twoStarDot
+	    : twoStarNoDot
+	  var flags = options.nocase ? 'i' : ''
+
+	  var re = set.map(function (pattern) {
+	    return pattern.map(function (p) {
+	      return (p === GLOBSTAR) ? twoStar
+	      : (typeof p === 'string') ? regExpEscape(p)
+	      : p._src
+	    }).join('\\\/')
+	  }).join('|')
+
+	  // must match entire pattern
+	  // ending in a * or ** will make it less strict.
+	  re = '^(?:' + re + ')$'
+
+	  // can match anything, as long as it's not this.
+	  if (this.negate) re = '^(?!' + re + ').*$'
+
+	  try {
+	    this.regexp = new RegExp(re, flags)
+	  } catch (ex) {
+	    this.regexp = false
+	  }
+	  return this.regexp
+	}
+
+	minimatch.match = function (list, pattern, options) {
+	  options = options || {}
+	  var mm = new Minimatch(pattern, options)
+	  list = list.filter(function (f) {
+	    return mm.match(f)
+	  })
+	  if (mm.options.nonull && !list.length) {
+	    list.push(pattern)
+	  }
+	  return list
+	}
+
+	Minimatch.prototype.match = match
+	function match (f, partial) {
+	  this.debug('match', f, this.pattern)
+	  // short-circuit in the case of busted things.
+	  // comments, etc.
+	  if (this.comment) return false
+	  if (this.empty) return f === ''
+
+	  if (f === '/' && partial) return true
+
+	  var options = this.options
+
+	  // windows: need to use /, not \
+	  if (path.sep !== '/') {
+	    f = f.split(path.sep).join('/')
+	  }
+
+	  // treat the test path as a set of pathparts.
+	  f = f.split(slashSplit)
+	  this.debug(this.pattern, 'split', f)
+
+	  // just ONE of the pattern sets in this.set needs to match
+	  // in order for it to be valid.  If negating, then just one
+	  // match means that we have failed.
+	  // Either way, return on the first hit.
+
+	  var set = this.set
+	  this.debug(this.pattern, 'set', set)
+
+	  // Find the basename of the path by looking for the last non-empty segment
+	  var filename
+	  var i
+	  for (i = f.length - 1; i >= 0; i--) {
+	    filename = f[i]
+	    if (filename) break
+	  }
+
+	  for (i = 0; i < set.length; i++) {
+	    var pattern = set[i]
+	    var file = f
+	    if (options.matchBase && pattern.length === 1) {
+	      file = [filename]
+	    }
+	    var hit = this.matchOne(file, pattern, partial)
+	    if (hit) {
+	      if (options.flipNegate) return true
+	      return !this.negate
+	    }
+	  }
+
+	  // didn't get any hits.  this is success if it's a negative
+	  // pattern, failure otherwise.
+	  if (options.flipNegate) return false
+	  return this.negate
+	}
+
+	// set partial to true to test if, for example,
+	// "/a/b" matches the start of "/*/b/*/d"
+	// Partial means, if you run out of file before you run
+	// out of pattern, then that's fine, as long as all
+	// the parts match.
+	Minimatch.prototype.matchOne = function (file, pattern, partial) {
+	  var options = this.options
+
+	  this.debug('matchOne',
+	    { 'this': this, file: file, pattern: pattern })
+
+	  this.debug('matchOne', file.length, pattern.length)
+
+	  for (var fi = 0,
+	      pi = 0,
+	      fl = file.length,
+	      pl = pattern.length
+	      ; (fi < fl) && (pi < pl)
+	      ; fi++, pi++) {
+	    this.debug('matchOne loop')
+	    var p = pattern[pi]
+	    var f = file[fi]
+
+	    this.debug(pattern, p, f)
+
+	    // should be impossible.
+	    // some invalid regexp stuff in the set.
+	    if (p === false) return false
+
+	    if (p === GLOBSTAR) {
+	      this.debug('GLOBSTAR', [pattern, p, f])
+
+	      // "**"
+	      // a/**/b/**/c would match the following:
+	      // a/b/x/y/z/c
+	      // a/x/y/z/b/c
+	      // a/b/x/b/x/c
+	      // a/b/c
+	      // To do this, take the rest of the pattern after
+	      // the **, and see if it would match the file remainder.
+	      // If so, return success.
+	      // If not, the ** "swallows" a segment, and try again.
+	      // This is recursively awful.
+	      //
+	      // a/**/b/**/c matching a/b/x/y/z/c
+	      // - a matches a
+	      // - doublestar
+	      //   - matchOne(b/x/y/z/c, b/**/c)
+	      //     - b matches b
+	      //     - doublestar
+	      //       - matchOne(x/y/z/c, c) -> no
+	      //       - matchOne(y/z/c, c) -> no
+	      //       - matchOne(z/c, c) -> no
+	      //       - matchOne(c, c) yes, hit
+	      var fr = fi
+	      var pr = pi + 1
+	      if (pr === pl) {
+	        this.debug('** at the end')
+	        // a ** at the end will just swallow the rest.
+	        // We have found a match.
+	        // however, it will not swallow /.x, unless
+	        // options.dot is set.
+	        // . and .. are *never* matched by **, for explosively
+	        // exponential reasons.
+	        for (; fi < fl; fi++) {
+	          if (file[fi] === '.' || file[fi] === '..' ||
+	            (!options.dot && file[fi].charAt(0) === '.')) return false
+	        }
+	        return true
+	      }
+
+	      // ok, let's see if we can swallow whatever we can.
+	      while (fr < fl) {
+	        var swallowee = file[fr]
+
+	        this.debug('\nglobstar while', file, fr, pattern, pr, swallowee)
+
+	        // XXX remove this slice.  Just pass the start index.
+	        if (this.matchOne(file.slice(fr), pattern.slice(pr), partial)) {
+	          this.debug('globstar found match!', fr, fl, swallowee)
+	          // found a match.
+	          return true
+	        } else {
+	          // can't swallow "." or ".." ever.
+	          // can only swallow ".foo" when explicitly asked.
+	          if (swallowee === '.' || swallowee === '..' ||
+	            (!options.dot && swallowee.charAt(0) === '.')) {
+	            this.debug('dot detected!', file, fr, pattern, pr)
+	            break
+	          }
+
+	          // ** swallows a segment, and continue.
+	          this.debug('globstar swallow a segment, and continue')
+	          fr++
+	        }
+	      }
+
+	      // no match was found.
+	      // However, in partial mode, we can't say this is necessarily over.
+	      // If there's more *pattern* left, then
+	      if (partial) {
+	        // ran out of file
+	        this.debug('\n>>> no match, partial?', file, fr, pattern, pr)
+	        if (fr === fl) return true
+	      }
+	      return false
+	    }
+
+	    // something other than **
+	    // non-magic patterns just have to match exactly
+	    // patterns with magic have been turned into regexps.
+	    var hit
+	    if (typeof p === 'string') {
+	      if (options.nocase) {
+	        hit = f.toLowerCase() === p.toLowerCase()
+	      } else {
+	        hit = f === p
+	      }
+	      this.debug('string match', p, f, hit)
+	    } else {
+	      hit = f.match(p)
+	      this.debug('pattern match', p, f, hit)
+	    }
+
+	    if (!hit) return false
+	  }
+
+	  // Note: ending in / means that we'll get a final ""
+	  // at the end of the pattern.  This can only match a
+	  // corresponding "" at the end of the file.
+	  // If the file ends in /, then it can only match a
+	  // a pattern that ends in /, unless the pattern just
+	  // doesn't have any more for it. But, a/b/ should *not*
+	  // match "a/b/*", even though "" matches against the
+	  // [^/]*? pattern, except in partial mode, where it might
+	  // simply not be reached yet.
+	  // However, a/b/ should still satisfy a/*
+
+	  // now either we fell off the end of the pattern, or we're done.
+	  if (fi === fl && pi === pl) {
+	    // ran out of pattern and filename at the same time.
+	    // an exact hit!
+	    return true
+	  } else if (fi === fl) {
+	    // ran out of file, but still had pattern left.
+	    // this is ok if we're doing the match as part of
+	    // a glob fs traversal.
+	    return partial
+	  } else if (pi === pl) {
+	    // ran out of pattern, still have file left.
+	    // this is only acceptable if we're on the very last
+	    // empty segment of a file with a trailing slash.
+	    // a/* should match a/b/
+	    var emptyFileEnd = (fi === fl - 1) && (file[fi] === '')
+	    return emptyFileEnd
+	  }
+
+	  // should be unreachable.
+	  throw new Error('wtf?')
+	}
+
+	// replace stuff like \* with *
+	function globUnescape (s) {
+	  return s.replace(/\\(.)/g, '$1')
+	}
+
+	function regExpEscape (s) {
+	  return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
+	}
+
+
+/***/ },
+/* 54 */
+/***/ function(module, exports, __webpack_require__) {
+
+	var concatMap = __webpack_require__(55);
+	var balanced = __webpack_require__(56);
+
+	module.exports = expandTop;
+
+	var escSlash = '\0SLASH'+Math.random()+'\0';
+	var escOpen = '\0OPEN'+Math.random()+'\0';
+	var escClose = '\0CLOSE'+Math.random()+'\0';
+	var escComma = '\0COMMA'+Math.random()+'\0';
+	var escPeriod = '\0PERIOD'+Math.random()+'\0';
+
+	function numeric(str) {
+	  return parseInt(str, 10) == str
+	    ? parseInt(str, 10)
+	    : str.charCodeAt(0);
+	}
+
+	function escapeBraces(str) {
+	  return str.split('\\\\').join(escSlash)
+	            .split('\\{').join(escOpen)
+	            .split('\\}').join(escClose)
+	            .split('\\,').join(escComma)
+	            .split('\\.').join(escPeriod);
+	}
+
+	function unescapeBraces(str) {
+	  return str.split(escSlash).join('\\')
+	            .split(escOpen).join('{')
+	            .split(escClose).join('}')
+	            .split(escComma).join(',')
+	            .split(escPeriod).join('.');
+	}
+
+
+	// Basically just str.split(","), but handling cases
+	// where we have nested braced sections, which should be
+	// treated as individual members, like {a,{b,c},d}
+	function parseCommaParts(str) {
+	  if (!str)
+	    return [''];
+
+	  var parts = [];
+	  var m = balanced('{', '}', str);
+
+	  if (!m)
+	    return str.split(',');
+
+	  var pre = m.pre;
+	  var body = m.body;
+	  var post = m.post;
+	  var p = pre.split(',');
+
+	  p[p.length-1] += '{' + body + '}';
+	  var postParts = parseCommaParts(post);
+	  if (post.length) {
+	    p[p.length-1] += postParts.shift();
+	    p.push.apply(p, postParts);
+	  }
+
+	  parts.push.apply(parts, p);
+
+	  return parts;
+	}
+
+	function expandTop(str) {
+	  if (!str)
+	    return [];
+
+	  return expand(escapeBraces(str), true).map(unescapeBraces);
+	}
+
+	function identity(e) {
+	  return e;
+	}
+
+	function embrace(str) {
+	  return '{' + str + '}';
+	}
+	function isPadded(el) {
+	  return /^-?0\d/.test(el);
+	}
+
+	function lte(i, y) {
+	  return i <= y;
+	}
+	function gte(i, y) {
+	  return i >= y;
+	}
+
+	function expand(str, isTop) {
+	  var expansions = [];
+
+	  var m = balanced('{', '}', str);
+	  if (!m || /\$$/.test(m.pre)) return [str];
+
+	  var isNumericSequence = /^-?\d+\.\.-?\d+(?:\.\.-?\d+)?$/.test(m.body);
+	  var isAlphaSequence = /^[a-zA-Z]\.\.[a-zA-Z](?:\.\.-?\d+)?$/.test(m.body);
+	  var isSequence = isNumericSequence || isAlphaSequence;
+	  var isOptions = /^(.*,)+(.+)?$/.test(m.body);
+	  if (!isSequence && !isOptions) {
+	    // {a},b}
+	    if (m.post.match(/,.*\}/)) {
+	      str = m.pre + '{' + m.body + escClose + m.post;
+	      return expand(str);
+	    }
+	    return [str];
+	  }
+
+	  var n;
+	  if (isSequence) {
+	    n = m.body.split(/\.\./);
+	  } else {
+	    n = parseCommaParts(m.body);
+	    if (n.length === 1) {
+	      // x{{a,b}}y ==> x{a}y x{b}y
+	      n = expand(n[0], false).map(embrace);
+	      if (n.length === 1) {
+	        var post = m.post.length
+	          ? expand(m.post, false)
+	          : [''];
+	        return post.map(function(p) {
+	          return m.pre + n[0] + p;
+	        });
+	      }
+	    }
+	  }
+
+	  // at this point, n is the parts, and we know it's not a comma set
+	  // with a single entry.
+
+	  // no need to expand pre, since it is guaranteed to be free of brace-sets
+	  var pre = m.pre;
+	  var post = m.post.length
+	    ? expand(m.post, false)
+	    : [''];
+
+	  var N;
+
+	  if (isSequence) {
+	    var x = numeric(n[0]);
+	    var y = numeric(n[1]);
+	    var width = Math.max(n[0].length, n[1].length)
+	    var incr = n.length == 3
+	      ? Math.abs(numeric(n[2]))
+	      : 1;
+	    var test = lte;
+	    var reverse = y < x;
+	    if (reverse) {
+	      incr *= -1;
+	      test = gte;
+	    }
+	    var pad = n.some(isPadded);
+
+	    N = [];
+
+	    for (var i = x; test(i, y); i += incr) {
+	      var c;
+	      if (isAlphaSequence) {
+	        c = String.fromCharCode(i);
+	        if (c === '\\')
+	          c = '';
+	      } else {
+	        c = String(i);
+	        if (pad) {
+	          var need = width - c.length;
+	          if (need > 0) {
+	            var z = new Array(need + 1).join('0');
+	            if (i < 0)
+	              c = '-' + z + c.slice(1);
+	            else
+	              c = z + c;
+	          }
+	        }
+	      }
+	      N.push(c);
+	    }
+	  } else {
+	    N = concatMap(n, function(el) { return expand(el, false) });
+	  }
+
+	  for (var j = 0; j < N.length; j++) {
+	    for (var k = 0; k < post.length; k++) {
+	      var expansion = pre + N[j] + post[k];
+	      if (!isTop || isSequence || expansion)
+	        expansions.push(expansion);
+	    }
+	  }
+
+	  return expansions;
+	}
+
+
+
+/***/ },
+/* 55 */
+/***/ function(module, exports) {
+
+	module.exports = function (xs, fn) {
+	    var res = [];
+	    for (var i = 0; i < xs.length; i++) {
+	        var x = fn(xs[i], i);
+	        if (isArray(x)) res.push.apply(res, x);
+	        else res.push(x);
+	    }
+	    return res;
+	};
+
+	var isArray = Array.isArray || function (xs) {
+	    return Object.prototype.toString.call(xs) === '[object Array]';
+	};
+
+
+/***/ },
+/* 56 */
+/***/ function(module, exports) {
+
+	module.exports = balanced;
+	function balanced(a, b, str) {
+	  if (a instanceof RegExp) a = maybeMatch(a, str);
+	  if (b instanceof RegExp) b = maybeMatch(b, str);
+
+	  var r = range(a, b, str);
+
+	  return r && {
+	    start: r[0],
+	    end: r[1],
+	    pre: str.slice(0, r[0]),
+	    body: str.slice(r[0] + a.length, r[1]),
+	    post: str.slice(r[1] + b.length)
+	  };
+	}
+
+	function maybeMatch(reg, str) {
+	  var m = str.match(reg);
+	  return m ? m[0] : null;
+	}
+
+	balanced.range = range;
+	function range(a, b, str) {
+	  var begs, beg, left, right, result;
+	  var ai = str.indexOf(a);
+	  var bi = str.indexOf(b, ai + 1);
+	  var i = ai;
+
+	  if (ai >= 0 && bi > 0) {
+	    begs = [];
+	    left = str.length;
+
+	    while (i < str.length && i >= 0 && ! result) {
+	      if (i == ai) {
+	        begs.push(i);
+	        ai = str.indexOf(a, i + 1);
+	      } else if (begs.length == 1) {
+	        result = [ begs.pop(), bi ];
+	      } else {
+	        beg = begs.pop();
+	        if (beg < left) {
+	          left = beg;
+	          right = bi;
+	        }
+
+	        bi = str.indexOf(b, i + 1);
+	      }
+
+	      i = ai < bi && ai >= 0 ? ai : bi;
+	    }
+
+	    if (begs.length) {
+	      result = [ left, right ];
+	    }
+	  }
+
+	  return result;
+	}
+
+
+/***/ },
+/* 57 */
+/***/ function(module, exports, __webpack_require__) {
+
+	module.exports = __webpack_require__(58).inherits
+
+
+/***/ },
+/* 58 */
+/***/ function(module, exports) {
+
+	module.exports = require("util");
+
+/***/ },
+/* 59 */
+/***/ function(module, exports) {
+
+	module.exports = require("events");
+
+/***/ },
+/* 60 */
+/***/ function(module, exports) {
+
+	'use strict';
+
+	function posix(path) {
+		return path.charAt(0) === '/';
+	};
+
+	function win32(path) {
+		// https://github.com/joyent/node/blob/b3fcc245fb25539909ef1d5eaa01dbf92e168633/lib/path.js#L56
+		var splitDeviceRe = /^([a-zA-Z]:|[\\\/]{2}[^\\\/]+[\\\/]+[^\\\/]+)?([\\\/])?([\s\S]*?)$/;
+		var result = splitDeviceRe.exec(path);
+		var device = result[1] || '';
+		var isUnc = !!device && device.charAt(1) !== ':';
+
+		// UNC paths are always absolute
+		return !!result[2] || isUnc;
+	};
+
+	module.exports = process.platform === 'win32' ? win32 : posix;
+	module.exports.posix = posix;
+	module.exports.win32 = win32;
+
+
+/***/ },
+/* 61 */
+/***/ function(module, exports, __webpack_require__) {
+
+	module.exports = globSync
+	globSync.GlobSync = GlobSync
+
+	var fs = __webpack_require__(7)
+	var rp = __webpack_require__(51)
+	var minimatch = __webpack_require__(53)
+	var Minimatch = minimatch.Minimatch
+	var Glob = __webpack_require__(50).Glob
+	var util = __webpack_require__(58)
+	var path = __webpack_require__(9)
+	var assert = __webpack_require__(49)
+	var isAbsolute = __webpack_require__(60)
+	var common = __webpack_require__(62)
+	var alphasort = common.alphasort
+	var alphasorti = common.alphasorti
+	var setopts = common.setopts
+	var ownProp = common.ownProp
+	var childrenIgnored = common.childrenIgnored
+
+	function globSync (pattern, options) {
+	  if (typeof options === 'function' || arguments.length === 3)
+	    throw new TypeError('callback provided to sync glob\n'+
+	                        'See: https://github.com/isaacs/node-glob/issues/167')
+
+	  return new GlobSync(pattern, options).found
+	}
+
+	function GlobSync (pattern, options) {
+	  if (!pattern)
+	    throw new Error('must provide pattern')
+
+	  if (typeof options === 'function' || arguments.length === 3)
+	    throw new TypeError('callback provided to sync glob\n'+
+	                        'See: https://github.com/isaacs/node-glob/issues/167')
+
+	  if (!(this instanceof GlobSync))
+	    return new GlobSync(pattern, options)
+
+	  setopts(this, pattern, options)
+
+	  if (this.noprocess)
+	    return this
+
+	  var n = this.minimatch.set.length
+	  this.matches = new Array(n)
+	  for (var i = 0; i < n; i ++) {
+	    this._process(this.minimatch.set[i], i, false)
+	  }
+	  this._finish()
+	}
+
+	GlobSync.prototype._finish = function () {
+	  assert(this instanceof GlobSync)
+	  if (this.realpath) {
+	    var self = this
+	    this.matches.forEach(function (matchset, index) {
+	      var set = self.matches[index] = Object.create(null)
+	      for (var p in matchset) {
+	        try {
+	          p = self._makeAbs(p)
+	          var real = rp.realpathSync(p, self.realpathCache)
+	          set[real] = true
+	        } catch (er) {
+	          if (er.syscall === 'stat')
+	            set[self._makeAbs(p)] = true
+	          else
+	            throw er
+	        }
+	      }
+	    })
+	  }
+	  common.finish(this)
+	}
+
+
+	GlobSync.prototype._process = function (pattern, index, inGlobStar) {
+	  assert(this instanceof GlobSync)
+
+	  // Get the first [n] parts of pattern that are all strings.
+	  var n = 0
+	  while (typeof pattern[n] === 'string') {
+	    n ++
+	  }
+	  // now n is the index of the first one that is *not* a string.
+
+	  // See if there's anything else
+	  var prefix
+	  switch (n) {
+	    // if not, then this is rather simple
+	    case pattern.length:
+	      this._processSimple(pattern.join('/'), index)
+	      return
+
+	    case 0:
+	      // pattern *starts* with some non-trivial item.
+	      // going to readdir(cwd), but not include the prefix in matches.
+	      prefix = null
+	      break
+
+	    default:
+	      // pattern has some string bits in the front.
+	      // whatever it starts with, whether that's 'absolute' like /foo/bar,
+	      // or 'relative' like '../baz'
+	      prefix = pattern.slice(0, n).join('/')
+	      break
+	  }
+
+	  var remain = pattern.slice(n)
+
+	  // get the list of entries.
+	  var read
+	  if (prefix === null)
+	    read = '.'
+	  else if (isAbsolute(prefix) || isAbsolute(pattern.join('/'))) {
+	    if (!prefix || !isAbsolute(prefix))
+	      prefix = '/' + prefix
+	    read = prefix
+	  } else
+	    read = prefix
+
+	  var abs = this._makeAbs(read)
+
+	  //if ignored, skip processing
+	  if (childrenIgnored(this, read))
+	    return
+
+	  var isGlobStar = remain[0] === minimatch.GLOBSTAR
+	  if (isGlobStar)
+	    this._processGlobStar(prefix, read, abs, remain, index, inGlobStar)
+	  else
+	    this._processReaddir(prefix, read, abs, remain, index, inGlobStar)
+	}
+
+
+	GlobSync.prototype._processReaddir = function (prefix, read, abs, remain, index, inGlobStar) {
+	  var entries = this._readdir(abs, inGlobStar)
+
+	  // if the abs isn't a dir, then nothing can match!
+	  if (!entries)
+	    return
+
+	  // It will only match dot entries if it starts with a dot, or if
+	  // dot is set.  Stuff like @(.foo|.bar) isn't allowed.
+	  var pn = remain[0]
+	  var negate = !!this.minimatch.negate
+	  var rawGlob = pn._glob
+	  var dotOk = this.dot || rawGlob.charAt(0) === '.'
+
+	  var matchedEntries = []
+	  for (var i = 0; i < entries.length; i++) {
+	    var e = entries[i]
+	    if (e.charAt(0) !== '.' || dotOk) {
+	      var m
+	      if (negate && !prefix) {
+	        m = !e.match(pn)
+	      } else {
+	        m = e.match(pn)
+	      }
+	      if (m)
+	        matchedEntries.push(e)
+	    }
+	  }
+
+	  var len = matchedEntries.length
+	  // If there are no matched entries, then nothing matches.
+	  if (len === 0)
+	    return
+
+	  // if this is the last remaining pattern bit, then no need for
+	  // an additional stat *unless* the user has specified mark or
+	  // stat explicitly.  We know they exist, since readdir returned
+	  // them.
+
+	  if (remain.length === 1 && !this.mark && !this.stat) {
+	    if (!this.matches[index])
+	      this.matches[index] = Object.create(null)
+
+	    for (var i = 0; i < len; i ++) {
+	      var e = matchedEntries[i]
+	      if (prefix) {
+	        if (prefix.slice(-1) !== '/')
+	          e = prefix + '/' + e
+	        else
+	          e = prefix + e
+	      }
+
+	      if (e.charAt(0) === '/' && !this.nomount) {
+	        e = path.join(this.root, e)
+	      }
+	      this.matches[index][e] = true
+	    }
+	    // This was the last one, and no stats were needed
+	    return
+	  }
+
+	  // now test all matched entries as stand-ins for that part
+	  // of the pattern.
+	  remain.shift()
+	  for (var i = 0; i < len; i ++) {
+	    var e = matchedEntries[i]
+	    var newPattern
+	    if (prefix)
+	      newPattern = [prefix, e]
+	    else
+	      newPattern = [e]
+	    this._process(newPattern.concat(remain), index, inGlobStar)
+	  }
+	}
+
+
+	GlobSync.prototype._emitMatch = function (index, e) {
+	  var abs = this._makeAbs(e)
+	  if (this.mark)
+	    e = this._mark(e)
+
+	  if (this.matches[index][e])
+	    return
+
+	  if (this.nodir) {
+	    var c = this.cache[this._makeAbs(e)]
+	    if (c === 'DIR' || Array.isArray(c))
+	      return
+	  }
+
+	  this.matches[index][e] = true
+	  if (this.stat)
+	    this._stat(e)
+	}
+
+
+	GlobSync.prototype._readdirInGlobStar = function (abs) {
+	  // follow all symlinked directories forever
+	  // just proceed as if this is a non-globstar situation
+	  if (this.follow)
+	    return this._readdir(abs, false)
+
+	  var entries
+	  var lstat
+	  var stat
+	  try {
+	    lstat = fs.lstatSync(abs)
+	  } catch (er) {
+	    // lstat failed, doesn't exist
+	    return null
+	  }
+
+	  var isSym = lstat.isSymbolicLink()
+	  this.symlinks[abs] = isSym
+
+	  // If it's not a symlink or a dir, then it's definitely a regular file.
+	  // don't bother doing a readdir in that case.
+	  if (!isSym && !lstat.isDirectory())
+	    this.cache[abs] = 'FILE'
+	  else
+	    entries = this._readdir(abs, false)
+
+	  return entries
+	}
+
+	GlobSync.prototype._readdir = function (abs, inGlobStar) {
+	  var entries
+
+	  if (inGlobStar && !ownProp(this.symlinks, abs))
+	    return this._readdirInGlobStar(abs)
+
+	  if (ownProp(this.cache, abs)) {
+	    var c = this.cache[abs]
+	    if (!c || c === 'FILE')
+	      return null
+
+	    if (Array.isArray(c))
+	      return c
+	  }
+
+	  try {
+	    return this._readdirEntries(abs, fs.readdirSync(abs))
+	  } catch (er) {
+	    this._readdirError(abs, er)
+	    return null
+	  }
+	}
+
+	GlobSync.prototype._readdirEntries = function (abs, entries) {
+	  // if we haven't asked to stat everything, then just
+	  // assume that everything in there exists, so we can avoid
+	  // having to stat it a second time.
+	  if (!this.mark && !this.stat) {
+	    for (var i = 0; i < entries.length; i ++) {
+	      var e = entries[i]
+	      if (abs === '/')
+	        e = abs + e
+	      else
+	        e = abs + '/' + e
+	      this.cache[e] = true
+	    }
+	  }
+
+	  this.cache[abs] = entries
+
+	  // mark and cache dir-ness
+	  return entries
+	}
+
+	GlobSync.prototype._readdirError = function (f, er) {
+	  // handle errors, and cache the information
+	  switch (er.code) {
+	    case 'ENOTSUP': // https://github.com/isaacs/node-glob/issues/205
+	    case 'ENOTDIR': // totally normal. means it *does* exist.
+	      var abs = this._makeAbs(f)
+	      this.cache[abs] = 'FILE'
+	      if (abs === this.cwdAbs) {
+	        var error = new Error(er.code + ' invalid cwd ' + this.cwd)
+	        error.path = this.cwd
+	        error.code = er.code
+	        throw error
+	      }
+	      break
+
+	    case 'ENOENT': // not terribly unusual
+	    case 'ELOOP':
+	    case 'ENAMETOOLONG':
+	    case 'UNKNOWN':
+	      this.cache[this._makeAbs(f)] = false
+	      break
+
+	    default: // some unusual error.  Treat as failure.
+	      this.cache[this._makeAbs(f)] = false
+	      if (this.strict)
+	        throw er
+	      if (!this.silent)
+	        console.error('glob error', er)
+	      break
+	  }
+	}
+
+	GlobSync.prototype._processGlobStar = function (prefix, read, abs, remain, index, inGlobStar) {
+
+	  var entries = this._readdir(abs, inGlobStar)
+
+	  // no entries means not a dir, so it can never have matches
+	  // foo.txt/** doesn't match foo.txt
+	  if (!entries)
+	    return
+
+	  // test without the globstar, and with every child both below
+	  // and replacing the globstar.
+	  var remainWithoutGlobStar = remain.slice(1)
+	  var gspref = prefix ? [ prefix ] : []
+	  var noGlobStar = gspref.concat(remainWithoutGlobStar)
+
+	  // the noGlobStar pattern exits the inGlobStar state
+	  this._process(noGlobStar, index, false)
+
+	  var len = entries.length
+	  var isSym = this.symlinks[abs]
+
+	  // If it's a symlink, and we're in a globstar, then stop
+	  if (isSym && inGlobStar)
+	    return
+
+	  for (var i = 0; i < len; i++) {
+	    var e = entries[i]
+	    if (e.charAt(0) === '.' && !this.dot)
+	      continue
+
+	    // these two cases enter the inGlobStar state
+	    var instead = gspref.concat(entries[i], remainWithoutGlobStar)
+	    this._process(instead, index, true)
+
+	    var below = gspref.concat(entries[i], remain)
+	    this._process(below, index, true)
+	  }
+	}
+
+	GlobSync.prototype._processSimple = function (prefix, index) {
+	  // XXX review this.  Shouldn't it be doing the mounting etc
+	  // before doing stat?  kinda weird?
+	  var exists = this._stat(prefix)
+
+	  if (!this.matches[index])
+	    this.matches[index] = Object.create(null)
+
+	  // If it doesn't exist, then just mark the lack of results
+	  if (!exists)
+	    return
+
+	  if (prefix && isAbsolute(prefix) && !this.nomount) {
+	    var trail = /[\/\\]$/.test(prefix)
+	    if (prefix.charAt(0) === '/') {
+	      prefix = path.join(this.root, prefix)
+	    } else {
+	      prefix = path.resolve(this.root, prefix)
+	      if (trail)
+	        prefix += '/'
+	    }
+	  }
+
+	  if (process.platform === 'win32')
+	    prefix = prefix.replace(/\\/g, '/')
+
+	  // Mark this as a match
+	  this.matches[index][prefix] = true
+	}
+
+	// Returns either 'DIR', 'FILE', or false
+	GlobSync.prototype._stat = function (f) {
+	  var abs = this._makeAbs(f)
+	  var needDir = f.slice(-1) === '/'
+
+	  if (f.length > this.maxLength)
+	    return false
+
+	  if (!this.stat && ownProp(this.cache, abs)) {
+	    var c = this.cache[abs]
+
+	    if (Array.isArray(c))
+	      c = 'DIR'
+
+	    // It exists, but maybe not how we need it
+	    if (!needDir || c === 'DIR')
+	      return c
+
+	    if (needDir && c === 'FILE')
+	      return false
+
+	    // otherwise we have to stat, because maybe c=true
+	    // if we know it exists, but not what it is.
+	  }
+
+	  var exists
+	  var stat = this.statCache[abs]
+	  if (!stat) {
+	    var lstat
+	    try {
+	      lstat = fs.lstatSync(abs)
+	    } catch (er) {
+	      return false
+	    }
+
+	    if (lstat.isSymbolicLink()) {
+	      try {
+	        stat = fs.statSync(abs)
+	      } catch (er) {
+	        stat = lstat
+	      }
+	    } else {
+	      stat = lstat
+	    }
+	  }
+
+	  this.statCache[abs] = stat
+
+	  var c = stat.isDirectory() ? 'DIR' : 'FILE'
+	  this.cache[abs] = this.cache[abs] || c
+
+	  if (needDir && c !== 'DIR')
+	    return false
+
+	  return c
+	}
+
+	GlobSync.prototype._mark = function (p) {
+	  return common.mark(this, p)
+	}
+
+	GlobSync.prototype._makeAbs = function (f) {
+	  return common.makeAbs(this, f)
+	}
+
+
+/***/ },
+/* 62 */
+/***/ function(module, exports, __webpack_require__) {
+
+	exports.alphasort = alphasort
+	exports.alphasorti = alphasorti
+	exports.setopts = setopts
+	exports.ownProp = ownProp
+	exports.makeAbs = makeAbs
+	exports.finish = finish
+	exports.mark = mark
+	exports.isIgnored = isIgnored
+	exports.childrenIgnored = childrenIgnored
+
+	function ownProp (obj, field) {
+	  return Object.prototype.hasOwnProperty.call(obj, field)
+	}
+
+	var path = __webpack_require__(9)
+	var minimatch = __webpack_require__(53)
+	var isAbsolute = __webpack_require__(60)
+	var Minimatch = minimatch.Minimatch
+
+	function alphasorti (a, b) {
+	  return a.toLowerCase().localeCompare(b.toLowerCase())
+	}
+
+	function alphasort (a, b) {
+	  return a.localeCompare(b)
+	}
+
+	function setupIgnores (self, options) {
+	  self.ignore = options.ignore || []
+
+	  if (!Array.isArray(self.ignore))
+	    self.ignore = [self.ignore]
+
+	  if (self.ignore.length) {
+	    self.ignore = self.ignore.map(ignoreMap)
+	  }
+	}
+
+	// ignore patterns are always in dot:true mode.
+	function ignoreMap (pattern) {
+	  var gmatcher = null
+	  if (pattern.slice(-3) === '/**') {
+	    var gpattern = pattern.replace(/(\/\*\*)+$/, '')
+	    gmatcher = new Minimatch(gpattern, { dot: true })
+	  }
+
+	  return {
+	    matcher: new Minimatch(pattern, { dot: true }),
+	    gmatcher: gmatcher
+	  }
+	}
+
+	function setopts (self, pattern, options) {
+	  if (!options)
+	    options = {}
+
+	  // base-matching: just use globstar for that.
+	  if (options.matchBase && -1 === pattern.indexOf("/")) {
+	    if (options.noglobstar) {
+	      throw new Error("base matching requires globstar")
+	    }
+	    pattern = "**/" + pattern
+	  }
+
+	  self.silent = !!options.silent
+	  self.pattern = pattern
+	  self.strict = options.strict !== false
+	  self.realpath = !!options.realpath
+	  self.realpathCache = options.realpathCache || Object.create(null)
+	  self.follow = !!options.follow
+	  self.dot = !!options.dot
+	  self.mark = !!options.mark
+	  self.nodir = !!options.nodir
+	  if (self.nodir)
+	    self.mark = true
+	  self.sync = !!options.sync
+	  self.nounique = !!options.nounique
+	  self.nonull = !!options.nonull
+	  self.nosort = !!options.nosort
+	  self.nocase = !!options.nocase
+	  self.stat = !!options.stat
+	  self.noprocess = !!options.noprocess
+
+	  self.maxLength = options.maxLength || Infinity
+	  self.cache = options.cache || Object.create(null)
+	  self.statCache = options.statCache || Object.create(null)
+	  self.symlinks = options.symlinks || Object.create(null)
+
+	  setupIgnores(self, options)
+
+	  self.changedCwd = false
+	  var cwd = process.cwd()
+	  if (!ownProp(options, "cwd"))
+	    self.cwd = cwd
+	  else {
+	    self.cwd = path.resolve(options.cwd)
+	    self.changedCwd = self.cwd !== cwd
+	  }
+
+	  self.root = options.root || path.resolve(self.cwd, "/")
+	  self.root = path.resolve(self.root)
+	  if (process.platform === "win32")
+	    self.root = self.root.replace(/\\/g, "/")
+
+	  self.cwdAbs = makeAbs(self, self.cwd)
+	  self.nomount = !!options.nomount
+
+	  // disable comments and negation in Minimatch.
+	  // Note that they are not supported in Glob itself anyway.
+	  options.nonegate = true
+	  options.nocomment = true
+
+	  self.minimatch = new Minimatch(pattern, options)
+	  self.options = self.minimatch.options
+	}
+
+	function finish (self) {
+	  var nou = self.nounique
+	  var all = nou ? [] : Object.create(null)
+
+	  for (var i = 0, l = self.matches.length; i < l; i ++) {
+	    var matches = self.matches[i]
+	    if (!matches || Object.keys(matches).length === 0) {
+	      if (self.nonull) {
+	        // do like the shell, and spit out the literal glob
+	        var literal = self.minimatch.globSet[i]
+	        if (nou)
+	          all.push(literal)
+	        else
+	          all[literal] = true
+	      }
+	    } else {
+	      // had matches
+	      var m = Object.keys(matches)
+	      if (nou)
+	        all.push.apply(all, m)
+	      else
+	        m.forEach(function (m) {
+	          all[m] = true
+	        })
+	    }
+	  }
+
+	  if (!nou)
+	    all = Object.keys(all)
+
+	  if (!self.nosort)
+	    all = all.sort(self.nocase ? alphasorti : alphasort)
+
+	  // at *some* point we statted all of these
+	  if (self.mark) {
+	    for (var i = 0; i < all.length; i++) {
+	      all[i] = self._mark(all[i])
+	    }
+	    if (self.nodir) {
+	      all = all.filter(function (e) {
+	        var notDir = !(/\/$/.test(e))
+	        var c = self.cache[e] || self.cache[makeAbs(self, e)]
+	        if (notDir && c)
+	          notDir = c !== 'DIR' && !Array.isArray(c)
+	        return notDir
+	      })
+	    }
+	  }
+
+	  if (self.ignore.length)
+	    all = all.filter(function(m) {
+	      return !isIgnored(self, m)
+	    })
+
+	  self.found = all
+	}
+
+	function mark (self, p) {
+	  var abs = makeAbs(self, p)
+	  var c = self.cache[abs]
+	  var m = p
+	  if (c) {
+	    var isDir = c === 'DIR' || Array.isArray(c)
+	    var slash = p.slice(-1) === '/'
+
+	    if (isDir && !slash)
+	      m += '/'
+	    else if (!isDir && slash)
+	      m = m.slice(0, -1)
+
+	    if (m !== p) {
+	      var mabs = makeAbs(self, m)
+	      self.statCache[mabs] = self.statCache[abs]
+	      self.cache[mabs] = self.cache[abs]
+	    }
+	  }
+
+	  return m
+	}
+
+	// lotta situps...
+	function makeAbs (self, f) {
+	  var abs = f
+	  if (f.charAt(0) === '/') {
+	    abs = path.join(self.root, f)
+	  } else if (isAbsolute(f) || f === '') {
+	    abs = f
+	  } else if (self.changedCwd) {
+	    abs = path.resolve(self.cwd, f)
+	  } else {
+	    abs = path.resolve(f)
+	  }
+
+	  if (process.platform === 'win32')
+	    abs = abs.replace(/\\/g, '/')
+
+	  return abs
+	}
+
+
+	// Return true, if pattern ends with globstar '**', for the accompanying parent directory.
+	// Ex:- If node_modules/** is the pattern, add 'node_modules' to ignore list along with it's contents
+	function isIgnored (self, path) {
+	  if (!self.ignore.length)
+	    return false
+
+	  return self.ignore.some(function(item) {
+	    return item.matcher.match(path) || !!(item.gmatcher && item.gmatcher.match(path))
+	  })
+	}
+
+	function childrenIgnored (self, path) {
+	  if (!self.ignore.length)
+	    return false
+
+	  return self.ignore.some(function(item) {
+	    return !!(item.gmatcher && item.gmatcher.match(path))
+	  })
+	}
+
+
+/***/ },
+/* 63 */
+/***/ function(module, exports, __webpack_require__) {
+
+	var wrappy = __webpack_require__(64)
+	var reqs = Object.create(null)
+	var once = __webpack_require__(65)
+
+	module.exports = wrappy(inflight)
+
+	function inflight (key, cb) {
+	  if (reqs[key]) {
+	    reqs[key].push(cb)
+	    return null
+	  } else {
+	    reqs[key] = [cb]
+	    return makeres(key)
+	  }
+	}
+
+	function makeres (key) {
+	  return once(function RES () {
+	    var cbs = reqs[key]
+	    var len = cbs.length
+	    var args = slice(arguments)
+	    for (var i = 0; i < len; i++) {
+	      cbs[i].apply(null, args)
+	    }
+	    if (cbs.length > len) {
+	      // added more in the interim.
+	      // de-zalgo, just in case, but don't call again.
+	      cbs.splice(0, len)
+	      process.nextTick(function () {
+	        RES.apply(null, args)
+	      })
+	    } else {
+	      delete reqs[key]
+	    }
+	  })
+	}
+
+	function slice (args) {
+	  var length = args.length
+	  var array = []
+
+	  for (var i = 0; i < length; i++) array[i] = args[i]
+	  return array
+	}
+
+
+/***/ },
+/* 64 */
+/***/ function(module, exports) {
+
+	// Returns a wrapper function that returns a wrapped callback
+	// The wrapper function should do some stuff, and return a
+	// presumably different callback function.
+	// This makes sure that own properties are retained, so that
+	// decorations and such are not lost along the way.
+	module.exports = wrappy
+	function wrappy (fn, cb) {
+	  if (fn && cb) return wrappy(fn)(cb)
+
+	  if (typeof fn !== 'function')
+	    throw new TypeError('need wrapper function')
+
+	  Object.keys(fn).forEach(function (k) {
+	    wrapper[k] = fn[k]
+	  })
+
+	  return wrapper
+
+	  function wrapper() {
+	    var args = new Array(arguments.length)
+	    for (var i = 0; i < args.length; i++) {
+	      args[i] = arguments[i]
+	    }
+	    var ret = fn.apply(this, args)
+	    var cb = args[args.length-1]
+	    if (typeof ret === 'function' && ret !== cb) {
+	      Object.keys(cb).forEach(function (k) {
+	        ret[k] = cb[k]
+	      })
+	    }
+	    return ret
+	  }
+	}
+
+
+/***/ },
+/* 65 */
+/***/ function(module, exports, __webpack_require__) {
+
+	var wrappy = __webpack_require__(64)
+	module.exports = wrappy(once)
+
+	once.proto = once(function () {
+	  Object.defineProperty(Function.prototype, 'once', {
+	    value: function () {
+	      return once(this)
+	    },
+	    configurable: true
+	  })
+	})
+
+	function once (fn) {
+	  var f = function () {
+	    if (f.called) return f.value
+	    f.called = true
+	    return f.value = fn.apply(this, arguments)
+	  }
+	  f.called = false
+	  return f
+	}
+
+
+/***/ },
+/* 66 */
+/***/ function(module, exports, __webpack_require__) {
+
 	'use strict';
 
 	Object.defineProperty(exports, "__esModule", {
@@ -2773,7 +7770,7 @@
 
 	var _fs2 = _interopRequireDefault(_fs);
 
-	var _xml2js = __webpack_require__(41);
+	var _xml2js = __webpack_require__(67);
 
 	var _xml2js2 = _interopRequireDefault(_xml2js);
 
@@ -2800,7 +7797,7 @@
 	};
 
 /***/ },
-/* 41 */
+/* 67 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.10.0
@@ -2811,17 +7808,17 @@
 	    hasProp = {}.hasOwnProperty,
 	    bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
-	  sax = __webpack_require__(42);
+	  sax = __webpack_require__(68);
 
-	  events = __webpack_require__(45);
+	  events = __webpack_require__(59);
 
-	  builder = __webpack_require__(46);
+	  builder = __webpack_require__(71);
 
-	  bom = __webpack_require__(188);
+	  bom = __webpack_require__(213);
 
-	  processors = __webpack_require__(189);
+	  processors = __webpack_require__(214);
 
-	  setImmediate = __webpack_require__(190).setImmediate;
+	  setImmediate = __webpack_require__(215).setImmediate;
 
 	  isEmpty = function(thing) {
 	    return typeof thing === "object" && (thing != null) && Object.keys(thing).length === 0;
@@ -3344,7 +8341,7 @@
 
 
 /***/ },
-/* 42 */
+/* 68 */
 /***/ function(module, exports, __webpack_require__) {
 
 	;(function (sax) { // wrapper for non-node envs
@@ -3509,7 +8506,7 @@
 
 	  var Stream
 	  try {
-	    Stream = __webpack_require__(43).Stream
+	    Stream = __webpack_require__(69).Stream
 	  } catch (ex) {
 	    Stream = function () {}
 	  }
@@ -3579,7 +8576,7 @@
 	      typeof Buffer.isBuffer === 'function' &&
 	      Buffer.isBuffer(data)) {
 	      if (!this._decoder) {
-	        var SD = __webpack_require__(44).StringDecoder
+	        var SD = __webpack_require__(70).StringDecoder
 	        this._decoder = new SD('utf8')
 	      }
 	      data = this._decoder.write(data)
@@ -4926,34 +9923,28 @@
 
 
 /***/ },
-/* 43 */
+/* 69 */
 /***/ function(module, exports) {
 
 	module.exports = require("stream");
 
 /***/ },
-/* 44 */
+/* 70 */
 /***/ function(module, exports) {
 
 	module.exports = require("string_decoder");
 
 /***/ },
-/* 45 */
-/***/ function(module, exports) {
-
-	module.exports = require("events");
-
-/***/ },
-/* 46 */
+/* 71 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
 	(function() {
 	  var XMLBuilder, assign;
 
-	  assign = __webpack_require__(47);
+	  assign = __webpack_require__(72);
 
-	  XMLBuilder = __webpack_require__(78);
+	  XMLBuilder = __webpack_require__(103);
 
 	  module.exports.create = function(name, xmldec, doctype, options) {
 	    options = assign({}, xmldec, doctype, options);
@@ -4964,15 +9955,15 @@
 
 
 /***/ },
-/* 47 */
+/* 72 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var assignValue = __webpack_require__(48),
-	    copyObject = __webpack_require__(50),
-	    createAssigner = __webpack_require__(51),
-	    isArrayLike = __webpack_require__(53),
-	    isPrototype = __webpack_require__(67),
-	    keys = __webpack_require__(68);
+	var assignValue = __webpack_require__(73),
+	    copyObject = __webpack_require__(75),
+	    createAssigner = __webpack_require__(76),
+	    isArrayLike = __webpack_require__(78),
+	    isPrototype = __webpack_require__(92),
+	    keys = __webpack_require__(93);
 
 	/** Used for built-in method references. */
 	var objectProto = Object.prototype;
@@ -5034,10 +10025,10 @@
 
 
 /***/ },
-/* 48 */
+/* 73 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var eq = __webpack_require__(49);
+	var eq = __webpack_require__(74);
 
 	/** Used for built-in method references. */
 	var objectProto = Object.prototype;
@@ -5067,7 +10058,7 @@
 
 
 /***/ },
-/* 49 */
+/* 74 */
 /***/ function(module, exports) {
 
 	/**
@@ -5110,10 +10101,10 @@
 
 
 /***/ },
-/* 50 */
+/* 75 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var assignValue = __webpack_require__(48);
+	var assignValue = __webpack_require__(73);
 
 	/**
 	 * Copies properties of `source` to `object`.
@@ -5147,11 +10138,11 @@
 
 
 /***/ },
-/* 51 */
+/* 76 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isIterateeCall = __webpack_require__(52),
-	    rest = __webpack_require__(60);
+	var isIterateeCall = __webpack_require__(77),
+	    rest = __webpack_require__(85);
 
 	/**
 	 * Creates a function like `_.assign`.
@@ -5190,13 +10181,13 @@
 
 
 /***/ },
-/* 52 */
+/* 77 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var eq = __webpack_require__(49),
-	    isArrayLike = __webpack_require__(53),
-	    isIndex = __webpack_require__(59),
-	    isObject = __webpack_require__(57);
+	var eq = __webpack_require__(74),
+	    isArrayLike = __webpack_require__(78),
+	    isIndex = __webpack_require__(84),
+	    isObject = __webpack_require__(82);
 
 	/**
 	 * Checks if the given arguments are from an iteratee call.
@@ -5226,12 +10217,12 @@
 
 
 /***/ },
-/* 53 */
+/* 78 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getLength = __webpack_require__(54),
-	    isFunction = __webpack_require__(56),
-	    isLength = __webpack_require__(58);
+	var getLength = __webpack_require__(79),
+	    isFunction = __webpack_require__(81),
+	    isLength = __webpack_require__(83);
 
 	/**
 	 * Checks if `value` is array-like. A value is considered array-like if it's
@@ -5266,10 +10257,10 @@
 
 
 /***/ },
-/* 54 */
+/* 79 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseProperty = __webpack_require__(55);
+	var baseProperty = __webpack_require__(80);
 
 	/**
 	 * Gets the "length" property value of `object`.
@@ -5288,7 +10279,7 @@
 
 
 /***/ },
-/* 55 */
+/* 80 */
 /***/ function(module, exports) {
 
 	/**
@@ -5308,10 +10299,10 @@
 
 
 /***/ },
-/* 56 */
+/* 81 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isObject = __webpack_require__(57);
+	var isObject = __webpack_require__(82);
 
 	/** `Object#toString` result references. */
 	var funcTag = '[object Function]',
@@ -5357,7 +10348,7 @@
 
 
 /***/ },
-/* 57 */
+/* 82 */
 /***/ function(module, exports) {
 
 	/**
@@ -5394,7 +10385,7 @@
 
 
 /***/ },
-/* 58 */
+/* 83 */
 /***/ function(module, exports) {
 
 	/** Used as references for various `Number` constants. */
@@ -5436,7 +10427,7 @@
 
 
 /***/ },
-/* 59 */
+/* 84 */
 /***/ function(module, exports) {
 
 	/** Used as references for various `Number` constants. */
@@ -5464,11 +10455,11 @@
 
 
 /***/ },
-/* 60 */
+/* 85 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var apply = __webpack_require__(61),
-	    toInteger = __webpack_require__(62);
+	var apply = __webpack_require__(86),
+	    toInteger = __webpack_require__(87);
 
 	/** Used as the `TypeError` message for "Functions" methods. */
 	var FUNC_ERROR_TEXT = 'Expected a function';
@@ -5534,7 +10525,7 @@
 
 
 /***/ },
-/* 61 */
+/* 86 */
 /***/ function(module, exports) {
 
 	/**
@@ -5562,10 +10553,10 @@
 
 
 /***/ },
-/* 62 */
+/* 87 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var toFinite = __webpack_require__(63);
+	var toFinite = __webpack_require__(88);
 
 	/**
 	 * Converts `value` to an integer.
@@ -5604,10 +10595,10 @@
 
 
 /***/ },
-/* 63 */
+/* 88 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var toNumber = __webpack_require__(64);
+	var toNumber = __webpack_require__(89);
 
 	/** Used as references for various `Number` constants. */
 	var INFINITY = 1 / 0,
@@ -5652,12 +10643,12 @@
 
 
 /***/ },
-/* 64 */
+/* 89 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isFunction = __webpack_require__(56),
-	    isObject = __webpack_require__(57),
-	    isSymbol = __webpack_require__(65);
+	var isFunction = __webpack_require__(81),
+	    isObject = __webpack_require__(82),
+	    isSymbol = __webpack_require__(90);
 
 	/** Used as references for various `Number` constants. */
 	var NAN = 0 / 0;
@@ -5725,10 +10716,10 @@
 
 
 /***/ },
-/* 65 */
+/* 90 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isObjectLike = __webpack_require__(66);
+	var isObjectLike = __webpack_require__(91);
 
 	/** `Object#toString` result references. */
 	var symbolTag = '[object Symbol]';
@@ -5770,7 +10761,7 @@
 
 
 /***/ },
-/* 66 */
+/* 91 */
 /***/ function(module, exports) {
 
 	/**
@@ -5805,7 +10796,7 @@
 
 
 /***/ },
-/* 67 */
+/* 92 */
 /***/ function(module, exports) {
 
 	/** Used for built-in method references. */
@@ -5829,15 +10820,15 @@
 
 
 /***/ },
-/* 68 */
+/* 93 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseHas = __webpack_require__(69),
-	    baseKeys = __webpack_require__(71),
-	    indexKeys = __webpack_require__(72),
-	    isArrayLike = __webpack_require__(53),
-	    isIndex = __webpack_require__(59),
-	    isPrototype = __webpack_require__(67);
+	var baseHas = __webpack_require__(94),
+	    baseKeys = __webpack_require__(96),
+	    indexKeys = __webpack_require__(97),
+	    isArrayLike = __webpack_require__(78),
+	    isIndex = __webpack_require__(84),
+	    isPrototype = __webpack_require__(92);
 
 	/**
 	 * Creates an array of the own enumerable property names of `object`.
@@ -5891,10 +10882,10 @@
 
 
 /***/ },
-/* 69 */
+/* 94 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getPrototype = __webpack_require__(70);
+	var getPrototype = __webpack_require__(95);
 
 	/** Used for built-in method references. */
 	var objectProto = Object.prototype;
@@ -5923,7 +10914,7 @@
 
 
 /***/ },
-/* 70 */
+/* 95 */
 /***/ function(module, exports) {
 
 	/* Built-in method references for those with the same name as other `lodash` methods. */
@@ -5944,7 +10935,7 @@
 
 
 /***/ },
-/* 71 */
+/* 96 */
 /***/ function(module, exports) {
 
 	/* Built-in method references for those with the same name as other `lodash` methods. */
@@ -5966,14 +10957,14 @@
 
 
 /***/ },
-/* 72 */
+/* 97 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseTimes = __webpack_require__(73),
-	    isArguments = __webpack_require__(74),
-	    isArray = __webpack_require__(76),
-	    isLength = __webpack_require__(58),
-	    isString = __webpack_require__(77);
+	var baseTimes = __webpack_require__(98),
+	    isArguments = __webpack_require__(99),
+	    isArray = __webpack_require__(101),
+	    isLength = __webpack_require__(83),
+	    isString = __webpack_require__(102);
 
 	/**
 	 * Creates an array of index keys for `object` values of arrays,
@@ -5996,7 +10987,7 @@
 
 
 /***/ },
-/* 73 */
+/* 98 */
 /***/ function(module, exports) {
 
 	/**
@@ -6022,10 +11013,10 @@
 
 
 /***/ },
-/* 74 */
+/* 99 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isArrayLikeObject = __webpack_require__(75);
+	var isArrayLikeObject = __webpack_require__(100);
 
 	/** `Object#toString` result references. */
 	var argsTag = '[object Arguments]';
@@ -6074,11 +11065,11 @@
 
 
 /***/ },
-/* 75 */
+/* 100 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isArrayLike = __webpack_require__(53),
-	    isObjectLike = __webpack_require__(66);
+	var isArrayLike = __webpack_require__(78),
+	    isObjectLike = __webpack_require__(91);
 
 	/**
 	 * This method is like `_.isArrayLike` except that it also checks if `value`
@@ -6113,7 +11104,7 @@
 
 
 /***/ },
-/* 76 */
+/* 101 */
 /***/ function(module, exports) {
 
 	/**
@@ -6147,11 +11138,11 @@
 
 
 /***/ },
-/* 77 */
+/* 102 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isArray = __webpack_require__(76),
-	    isObjectLike = __webpack_require__(66);
+	var isArray = __webpack_require__(101),
+	    isObjectLike = __webpack_require__(91);
 
 	/** `Object#toString` result references. */
 	var stringTag = '[object String]';
@@ -6193,20 +11184,20 @@
 
 
 /***/ },
-/* 78 */
+/* 103 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
 	(function() {
 	  var XMLBuilder, XMLDeclaration, XMLDocType, XMLElement, XMLStringifier;
 
-	  XMLStringifier = __webpack_require__(79);
+	  XMLStringifier = __webpack_require__(104);
 
-	  XMLDeclaration = __webpack_require__(80);
+	  XMLDeclaration = __webpack_require__(105);
 
-	  XMLDocType = __webpack_require__(181);
+	  XMLDocType = __webpack_require__(206);
 
-	  XMLElement = __webpack_require__(104);
+	  XMLElement = __webpack_require__(129);
 
 	  module.exports = XMLBuilder = (function() {
 	    function XMLBuilder(name, options) {
@@ -6268,7 +11259,7 @@
 
 
 /***/ },
-/* 79 */
+/* 104 */
 /***/ function(module, exports) {
 
 	// Generated by CoffeeScript 1.9.1
@@ -6444,7 +11435,7 @@
 
 
 /***/ },
-/* 80 */
+/* 105 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
@@ -6453,11 +11444,11 @@
 	    extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
 	    hasProp = {}.hasOwnProperty;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
-	  isObject = __webpack_require__(57);
+	  isObject = __webpack_require__(82);
 
-	  XMLNode = __webpack_require__(84);
+	  XMLNode = __webpack_require__(109);
 
 	  module.exports = XMLDeclaration = (function(superClass) {
 	    extend(XMLDeclaration, superClass);
@@ -6515,11 +11506,11 @@
 
 
 /***/ },
-/* 81 */
+/* 106 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseAssign = __webpack_require__(82),
-	    baseCreate = __webpack_require__(83);
+	var baseAssign = __webpack_require__(107),
+	    baseCreate = __webpack_require__(108);
 
 	/**
 	 * Creates an object that inherits from the `prototype` object. If a
@@ -6564,11 +11555,11 @@
 
 
 /***/ },
-/* 82 */
+/* 107 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var copyObject = __webpack_require__(50),
-	    keys = __webpack_require__(68);
+	var copyObject = __webpack_require__(75),
+	    keys = __webpack_require__(93);
 
 	/**
 	 * The base implementation of `_.assign` without support for multiple sources
@@ -6587,10 +11578,10 @@
 
 
 /***/ },
-/* 83 */
+/* 108 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isObject = __webpack_require__(57);
+	var isObject = __webpack_require__(82);
 
 	/** Built-in value references. */
 	var objectCreate = Object.create;
@@ -6611,7 +11602,7 @@
 
 
 /***/ },
-/* 84 */
+/* 109 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
@@ -6619,11 +11610,11 @@
 	  var XMLCData, XMLComment, XMLDeclaration, XMLDocType, XMLElement, XMLNode, XMLRaw, XMLText, isEmpty, isFunction, isObject,
 	    hasProp = {}.hasOwnProperty;
 
-	  isObject = __webpack_require__(57);
+	  isObject = __webpack_require__(82);
 
-	  isFunction = __webpack_require__(56);
+	  isFunction = __webpack_require__(81);
 
-	  isEmpty = __webpack_require__(85);
+	  isEmpty = __webpack_require__(110);
 
 	  XMLElement = null;
 
@@ -6645,13 +11636,13 @@
 	      this.options = this.parent.options;
 	      this.stringify = this.parent.stringify;
 	      if (XMLElement === null) {
-	        XMLElement = __webpack_require__(104);
-	        XMLCData = __webpack_require__(179);
-	        XMLComment = __webpack_require__(180);
-	        XMLDeclaration = __webpack_require__(80);
-	        XMLDocType = __webpack_require__(181);
-	        XMLRaw = __webpack_require__(186);
-	        XMLText = __webpack_require__(187);
+	        XMLElement = __webpack_require__(129);
+	        XMLCData = __webpack_require__(204);
+	        XMLComment = __webpack_require__(205);
+	        XMLDeclaration = __webpack_require__(105);
+	        XMLDocType = __webpack_require__(206);
+	        XMLRaw = __webpack_require__(211);
+	        XMLText = __webpack_require__(212);
 	      }
 	    }
 
@@ -6948,18 +11939,18 @@
 
 
 /***/ },
-/* 85 */
+/* 110 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getTag = __webpack_require__(86),
-	    isArguments = __webpack_require__(74),
-	    isArray = __webpack_require__(76),
-	    isArrayLike = __webpack_require__(53),
-	    isBuffer = __webpack_require__(101),
-	    isFunction = __webpack_require__(56),
-	    isObjectLike = __webpack_require__(66),
-	    isString = __webpack_require__(77),
-	    keys = __webpack_require__(68);
+	var getTag = __webpack_require__(111),
+	    isArguments = __webpack_require__(99),
+	    isArray = __webpack_require__(101),
+	    isArrayLike = __webpack_require__(78),
+	    isBuffer = __webpack_require__(126),
+	    isFunction = __webpack_require__(81),
+	    isObjectLike = __webpack_require__(91),
+	    isString = __webpack_require__(102),
+	    keys = __webpack_require__(93);
 
 	/** `Object#toString` result references. */
 	var mapTag = '[object Map]',
@@ -7034,15 +12025,15 @@
 
 
 /***/ },
-/* 86 */
+/* 111 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var DataView = __webpack_require__(87),
-	    Map = __webpack_require__(97),
-	    Promise = __webpack_require__(98),
-	    Set = __webpack_require__(99),
-	    WeakMap = __webpack_require__(100),
-	    toSource = __webpack_require__(95);
+	var DataView = __webpack_require__(112),
+	    Map = __webpack_require__(122),
+	    Promise = __webpack_require__(123),
+	    Set = __webpack_require__(124),
+	    WeakMap = __webpack_require__(125),
+	    toSource = __webpack_require__(120);
 
 	/** `Object#toString` result references. */
 	var mapTag = '[object Map]',
@@ -7110,11 +12101,11 @@
 
 
 /***/ },
-/* 87 */
+/* 112 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getNative = __webpack_require__(88),
-	    root = __webpack_require__(93);
+	var getNative = __webpack_require__(113),
+	    root = __webpack_require__(118);
 
 	/* Built-in method references that are verified to be native. */
 	var DataView = getNative(root, 'DataView');
@@ -7123,11 +12114,11 @@
 
 
 /***/ },
-/* 88 */
+/* 113 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseIsNative = __webpack_require__(89),
-	    getValue = __webpack_require__(96);
+	var baseIsNative = __webpack_require__(114),
+	    getValue = __webpack_require__(121);
 
 	/**
 	 * Gets the native function at `key` of `object`.
@@ -7146,14 +12137,14 @@
 
 
 /***/ },
-/* 89 */
+/* 114 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isFunction = __webpack_require__(56),
-	    isHostObject = __webpack_require__(90),
-	    isMasked = __webpack_require__(91),
-	    isObject = __webpack_require__(57),
-	    toSource = __webpack_require__(95);
+	var isFunction = __webpack_require__(81),
+	    isHostObject = __webpack_require__(115),
+	    isMasked = __webpack_require__(116),
+	    isObject = __webpack_require__(82),
+	    toSource = __webpack_require__(120);
 
 	/**
 	 * Used to match `RegExp`
@@ -7199,7 +12190,7 @@
 
 
 /***/ },
-/* 90 */
+/* 115 */
 /***/ function(module, exports) {
 
 	/**
@@ -7225,10 +12216,10 @@
 
 
 /***/ },
-/* 91 */
+/* 116 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var coreJsData = __webpack_require__(92);
+	var coreJsData = __webpack_require__(117);
 
 	/** Used to detect methods masquerading as native. */
 	var maskSrcKey = (function() {
@@ -7251,10 +12242,10 @@
 
 
 /***/ },
-/* 92 */
+/* 117 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var root = __webpack_require__(93);
+	var root = __webpack_require__(118);
 
 	/** Used to detect overreaching core-js shims. */
 	var coreJsData = root['__core-js_shared__'];
@@ -7263,10 +12254,10 @@
 
 
 /***/ },
-/* 93 */
+/* 118 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var checkGlobal = __webpack_require__(94);
+	var checkGlobal = __webpack_require__(119);
 
 	/** Detect free variable `global` from Node.js. */
 	var freeGlobal = checkGlobal(typeof global == 'object' && global);
@@ -7284,7 +12275,7 @@
 
 
 /***/ },
-/* 94 */
+/* 119 */
 /***/ function(module, exports) {
 
 	/**
@@ -7302,7 +12293,7 @@
 
 
 /***/ },
-/* 95 */
+/* 120 */
 /***/ function(module, exports) {
 
 	/** Used to resolve the decompiled source of functions. */
@@ -7331,7 +12322,7 @@
 
 
 /***/ },
-/* 96 */
+/* 121 */
 /***/ function(module, exports) {
 
 	/**
@@ -7350,11 +12341,11 @@
 
 
 /***/ },
-/* 97 */
+/* 122 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getNative = __webpack_require__(88),
-	    root = __webpack_require__(93);
+	var getNative = __webpack_require__(113),
+	    root = __webpack_require__(118);
 
 	/* Built-in method references that are verified to be native. */
 	var Map = getNative(root, 'Map');
@@ -7363,11 +12354,11 @@
 
 
 /***/ },
-/* 98 */
+/* 123 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getNative = __webpack_require__(88),
-	    root = __webpack_require__(93);
+	var getNative = __webpack_require__(113),
+	    root = __webpack_require__(118);
 
 	/* Built-in method references that are verified to be native. */
 	var Promise = getNative(root, 'Promise');
@@ -7376,11 +12367,11 @@
 
 
 /***/ },
-/* 99 */
+/* 124 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getNative = __webpack_require__(88),
-	    root = __webpack_require__(93);
+	var getNative = __webpack_require__(113),
+	    root = __webpack_require__(118);
 
 	/* Built-in method references that are verified to be native. */
 	var Set = getNative(root, 'Set');
@@ -7389,11 +12380,11 @@
 
 
 /***/ },
-/* 100 */
+/* 125 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getNative = __webpack_require__(88),
-	    root = __webpack_require__(93);
+	var getNative = __webpack_require__(113),
+	    root = __webpack_require__(118);
 
 	/* Built-in method references that are verified to be native. */
 	var WeakMap = getNative(root, 'WeakMap');
@@ -7402,11 +12393,11 @@
 
 
 /***/ },
-/* 101 */
+/* 126 */
 /***/ function(module, exports, __webpack_require__) {
 
-	/* WEBPACK VAR INJECTION */(function(module) {var root = __webpack_require__(93),
-	    stubFalse = __webpack_require__(103);
+	/* WEBPACK VAR INJECTION */(function(module) {var root = __webpack_require__(118),
+	    stubFalse = __webpack_require__(128);
 
 	/** Detect free variable `exports`. */
 	var freeExports = typeof exports == 'object' && exports;
@@ -7443,10 +12434,10 @@
 
 	module.exports = isBuffer;
 
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(102)(module)))
+	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(127)(module)))
 
 /***/ },
-/* 102 */
+/* 127 */
 /***/ function(module, exports) {
 
 	module.exports = function(module) {
@@ -7462,7 +12453,7 @@
 
 
 /***/ },
-/* 103 */
+/* 128 */
 /***/ function(module, exports) {
 
 	/**
@@ -7486,7 +12477,7 @@
 
 
 /***/ },
-/* 104 */
+/* 129 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
@@ -7495,19 +12486,19 @@
 	    extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
 	    hasProp = {}.hasOwnProperty;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
-	  isObject = __webpack_require__(57);
+	  isObject = __webpack_require__(82);
 
-	  isFunction = __webpack_require__(56);
+	  isFunction = __webpack_require__(81);
 
-	  every = __webpack_require__(105);
+	  every = __webpack_require__(130);
 
-	  XMLNode = __webpack_require__(84);
+	  XMLNode = __webpack_require__(109);
 
-	  XMLAttribute = __webpack_require__(177);
+	  XMLAttribute = __webpack_require__(202);
 
-	  XMLProcessingInstruction = __webpack_require__(178);
+	  XMLProcessingInstruction = __webpack_require__(203);
 
 	  module.exports = XMLElement = (function(superClass) {
 	    extend(XMLElement, superClass);
@@ -7704,14 +12695,14 @@
 
 
 /***/ },
-/* 105 */
+/* 130 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var arrayEvery = __webpack_require__(106),
-	    baseEvery = __webpack_require__(107),
-	    baseIteratee = __webpack_require__(113),
-	    isArray = __webpack_require__(76),
-	    isIterateeCall = __webpack_require__(52);
+	var arrayEvery = __webpack_require__(131),
+	    baseEvery = __webpack_require__(132),
+	    baseIteratee = __webpack_require__(138),
+	    isArray = __webpack_require__(101),
+	    isIterateeCall = __webpack_require__(77);
 
 	/**
 	 * Checks if `predicate` returns truthy for **all** elements of `collection`.
@@ -7762,7 +12753,7 @@
 
 
 /***/ },
-/* 106 */
+/* 131 */
 /***/ function(module, exports) {
 
 	/**
@@ -7791,10 +12782,10 @@
 
 
 /***/ },
-/* 107 */
+/* 132 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseEach = __webpack_require__(108);
+	var baseEach = __webpack_require__(133);
 
 	/**
 	 * The base implementation of `_.every` without support for iteratee shorthands.
@@ -7818,11 +12809,11 @@
 
 
 /***/ },
-/* 108 */
+/* 133 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseForOwn = __webpack_require__(109),
-	    createBaseEach = __webpack_require__(112);
+	var baseForOwn = __webpack_require__(134),
+	    createBaseEach = __webpack_require__(137);
 
 	/**
 	 * The base implementation of `_.forEach` without support for iteratee shorthands.
@@ -7838,11 +12829,11 @@
 
 
 /***/ },
-/* 109 */
+/* 134 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseFor = __webpack_require__(110),
-	    keys = __webpack_require__(68);
+	var baseFor = __webpack_require__(135),
+	    keys = __webpack_require__(93);
 
 	/**
 	 * The base implementation of `_.forOwn` without support for iteratee shorthands.
@@ -7860,10 +12851,10 @@
 
 
 /***/ },
-/* 110 */
+/* 135 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var createBaseFor = __webpack_require__(111);
+	var createBaseFor = __webpack_require__(136);
 
 	/**
 	 * The base implementation of `baseForOwn` which iterates over `object`
@@ -7882,7 +12873,7 @@
 
 
 /***/ },
-/* 111 */
+/* 136 */
 /***/ function(module, exports) {
 
 	/**
@@ -7913,10 +12904,10 @@
 
 
 /***/ },
-/* 112 */
+/* 137 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isArrayLike = __webpack_require__(53);
+	var isArrayLike = __webpack_require__(78);
 
 	/**
 	 * Creates a `baseEach` or `baseEachRight` function.
@@ -7951,14 +12942,14 @@
 
 
 /***/ },
-/* 113 */
+/* 138 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseMatches = __webpack_require__(114),
-	    baseMatchesProperty = __webpack_require__(161),
-	    identity = __webpack_require__(174),
-	    isArray = __webpack_require__(76),
-	    property = __webpack_require__(175);
+	var baseMatches = __webpack_require__(139),
+	    baseMatchesProperty = __webpack_require__(186),
+	    identity = __webpack_require__(199),
+	    isArray = __webpack_require__(101),
+	    property = __webpack_require__(200);
 
 	/**
 	 * The base implementation of `_.iteratee`.
@@ -7988,12 +12979,12 @@
 
 
 /***/ },
-/* 114 */
+/* 139 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseIsMatch = __webpack_require__(115),
-	    getMatchData = __webpack_require__(158),
-	    matchesStrictComparable = __webpack_require__(160);
+	var baseIsMatch = __webpack_require__(140),
+	    getMatchData = __webpack_require__(183),
+	    matchesStrictComparable = __webpack_require__(185);
 
 	/**
 	 * The base implementation of `_.matches` which doesn't clone `source`.
@@ -8016,11 +13007,11 @@
 
 
 /***/ },
-/* 115 */
+/* 140 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var Stack = __webpack_require__(116),
-	    baseIsEqual = __webpack_require__(144);
+	var Stack = __webpack_require__(141),
+	    baseIsEqual = __webpack_require__(169);
 
 	/** Used to compose bitmasks for comparison styles. */
 	var UNORDERED_COMPARE_FLAG = 1,
@@ -8084,15 +13075,15 @@
 
 
 /***/ },
-/* 116 */
+/* 141 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var ListCache = __webpack_require__(117),
-	    stackClear = __webpack_require__(124),
-	    stackDelete = __webpack_require__(125),
-	    stackGet = __webpack_require__(126),
-	    stackHas = __webpack_require__(127),
-	    stackSet = __webpack_require__(128);
+	var ListCache = __webpack_require__(142),
+	    stackClear = __webpack_require__(149),
+	    stackDelete = __webpack_require__(150),
+	    stackGet = __webpack_require__(151),
+	    stackHas = __webpack_require__(152),
+	    stackSet = __webpack_require__(153);
 
 	/**
 	 * Creates a stack cache object to store key-value pairs.
@@ -8116,14 +13107,14 @@
 
 
 /***/ },
-/* 117 */
+/* 142 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var listCacheClear = __webpack_require__(118),
-	    listCacheDelete = __webpack_require__(119),
-	    listCacheGet = __webpack_require__(121),
-	    listCacheHas = __webpack_require__(122),
-	    listCacheSet = __webpack_require__(123);
+	var listCacheClear = __webpack_require__(143),
+	    listCacheDelete = __webpack_require__(144),
+	    listCacheGet = __webpack_require__(146),
+	    listCacheHas = __webpack_require__(147),
+	    listCacheSet = __webpack_require__(148);
 
 	/**
 	 * Creates an list cache object.
@@ -8154,7 +13145,7 @@
 
 
 /***/ },
-/* 118 */
+/* 143 */
 /***/ function(module, exports) {
 
 	/**
@@ -8172,10 +13163,10 @@
 
 
 /***/ },
-/* 119 */
+/* 144 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var assocIndexOf = __webpack_require__(120);
+	var assocIndexOf = __webpack_require__(145);
 
 	/** Used for built-in method references. */
 	var arrayProto = Array.prototype;
@@ -8212,10 +13203,10 @@
 
 
 /***/ },
-/* 120 */
+/* 145 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var eq = __webpack_require__(49);
+	var eq = __webpack_require__(74);
 
 	/**
 	 * Gets the index at which the `key` is found in `array` of key-value pairs.
@@ -8239,10 +13230,10 @@
 
 
 /***/ },
-/* 121 */
+/* 146 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var assocIndexOf = __webpack_require__(120);
+	var assocIndexOf = __webpack_require__(145);
 
 	/**
 	 * Gets the list cache value for `key`.
@@ -8264,10 +13255,10 @@
 
 
 /***/ },
-/* 122 */
+/* 147 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var assocIndexOf = __webpack_require__(120);
+	var assocIndexOf = __webpack_require__(145);
 
 	/**
 	 * Checks if a list cache value for `key` exists.
@@ -8286,10 +13277,10 @@
 
 
 /***/ },
-/* 123 */
+/* 148 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var assocIndexOf = __webpack_require__(120);
+	var assocIndexOf = __webpack_require__(145);
 
 	/**
 	 * Sets the list cache `key` to `value`.
@@ -8317,10 +13308,10 @@
 
 
 /***/ },
-/* 124 */
+/* 149 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var ListCache = __webpack_require__(117);
+	var ListCache = __webpack_require__(142);
 
 	/**
 	 * Removes all key-value entries from the stack.
@@ -8337,7 +13328,7 @@
 
 
 /***/ },
-/* 125 */
+/* 150 */
 /***/ function(module, exports) {
 
 	/**
@@ -8357,7 +13348,7 @@
 
 
 /***/ },
-/* 126 */
+/* 151 */
 /***/ function(module, exports) {
 
 	/**
@@ -8377,7 +13368,7 @@
 
 
 /***/ },
-/* 127 */
+/* 152 */
 /***/ function(module, exports) {
 
 	/**
@@ -8397,11 +13388,11 @@
 
 
 /***/ },
-/* 128 */
+/* 153 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var ListCache = __webpack_require__(117),
-	    MapCache = __webpack_require__(129);
+	var ListCache = __webpack_require__(142),
+	    MapCache = __webpack_require__(154);
 
 	/** Used as the size to enable large array optimizations. */
 	var LARGE_ARRAY_SIZE = 200;
@@ -8429,14 +13420,14 @@
 
 
 /***/ },
-/* 129 */
+/* 154 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var mapCacheClear = __webpack_require__(130),
-	    mapCacheDelete = __webpack_require__(138),
-	    mapCacheGet = __webpack_require__(141),
-	    mapCacheHas = __webpack_require__(142),
-	    mapCacheSet = __webpack_require__(143);
+	var mapCacheClear = __webpack_require__(155),
+	    mapCacheDelete = __webpack_require__(163),
+	    mapCacheGet = __webpack_require__(166),
+	    mapCacheHas = __webpack_require__(167),
+	    mapCacheSet = __webpack_require__(168);
 
 	/**
 	 * Creates a map cache object to store key-value pairs.
@@ -8467,12 +13458,12 @@
 
 
 /***/ },
-/* 130 */
+/* 155 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var Hash = __webpack_require__(131),
-	    ListCache = __webpack_require__(117),
-	    Map = __webpack_require__(97);
+	var Hash = __webpack_require__(156),
+	    ListCache = __webpack_require__(142),
+	    Map = __webpack_require__(122);
 
 	/**
 	 * Removes all key-value entries from the map.
@@ -8493,14 +13484,14 @@
 
 
 /***/ },
-/* 131 */
+/* 156 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var hashClear = __webpack_require__(132),
-	    hashDelete = __webpack_require__(134),
-	    hashGet = __webpack_require__(135),
-	    hashHas = __webpack_require__(136),
-	    hashSet = __webpack_require__(137);
+	var hashClear = __webpack_require__(157),
+	    hashDelete = __webpack_require__(159),
+	    hashGet = __webpack_require__(160),
+	    hashHas = __webpack_require__(161),
+	    hashSet = __webpack_require__(162);
 
 	/**
 	 * Creates a hash object.
@@ -8531,10 +13522,10 @@
 
 
 /***/ },
-/* 132 */
+/* 157 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var nativeCreate = __webpack_require__(133);
+	var nativeCreate = __webpack_require__(158);
 
 	/**
 	 * Removes all key-value entries from the hash.
@@ -8551,10 +13542,10 @@
 
 
 /***/ },
-/* 133 */
+/* 158 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getNative = __webpack_require__(88);
+	var getNative = __webpack_require__(113);
 
 	/* Built-in method references that are verified to be native. */
 	var nativeCreate = getNative(Object, 'create');
@@ -8563,7 +13554,7 @@
 
 
 /***/ },
-/* 134 */
+/* 159 */
 /***/ function(module, exports) {
 
 	/**
@@ -8584,10 +13575,10 @@
 
 
 /***/ },
-/* 135 */
+/* 160 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var nativeCreate = __webpack_require__(133);
+	var nativeCreate = __webpack_require__(158);
 
 	/** Used to stand-in for `undefined` hash values. */
 	var HASH_UNDEFINED = '__lodash_hash_undefined__';
@@ -8620,10 +13611,10 @@
 
 
 /***/ },
-/* 136 */
+/* 161 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var nativeCreate = __webpack_require__(133);
+	var nativeCreate = __webpack_require__(158);
 
 	/** Used for built-in method references. */
 	var objectProto = Object.prototype;
@@ -8649,10 +13640,10 @@
 
 
 /***/ },
-/* 137 */
+/* 162 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var nativeCreate = __webpack_require__(133);
+	var nativeCreate = __webpack_require__(158);
 
 	/** Used to stand-in for `undefined` hash values. */
 	var HASH_UNDEFINED = '__lodash_hash_undefined__';
@@ -8677,10 +13668,10 @@
 
 
 /***/ },
-/* 138 */
+/* 163 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getMapData = __webpack_require__(139);
+	var getMapData = __webpack_require__(164);
 
 	/**
 	 * Removes `key` and its value from the map.
@@ -8699,10 +13690,10 @@
 
 
 /***/ },
-/* 139 */
+/* 164 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isKeyable = __webpack_require__(140);
+	var isKeyable = __webpack_require__(165);
 
 	/**
 	 * Gets the data for `map`.
@@ -8723,7 +13714,7 @@
 
 
 /***/ },
-/* 140 */
+/* 165 */
 /***/ function(module, exports) {
 
 	/**
@@ -8744,10 +13735,10 @@
 
 
 /***/ },
-/* 141 */
+/* 166 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getMapData = __webpack_require__(139);
+	var getMapData = __webpack_require__(164);
 
 	/**
 	 * Gets the map value for `key`.
@@ -8766,10 +13757,10 @@
 
 
 /***/ },
-/* 142 */
+/* 167 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getMapData = __webpack_require__(139);
+	var getMapData = __webpack_require__(164);
 
 	/**
 	 * Checks if a map value for `key` exists.
@@ -8788,10 +13779,10 @@
 
 
 /***/ },
-/* 143 */
+/* 168 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var getMapData = __webpack_require__(139);
+	var getMapData = __webpack_require__(164);
 
 	/**
 	 * Sets the map `key` to `value`.
@@ -8812,12 +13803,12 @@
 
 
 /***/ },
-/* 144 */
+/* 169 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseIsEqualDeep = __webpack_require__(145),
-	    isObject = __webpack_require__(57),
-	    isObjectLike = __webpack_require__(66);
+	var baseIsEqualDeep = __webpack_require__(170),
+	    isObject = __webpack_require__(82),
+	    isObjectLike = __webpack_require__(91);
 
 	/**
 	 * The base implementation of `_.isEqual` which supports partial comparisons
@@ -8848,17 +13839,17 @@
 
 
 /***/ },
-/* 145 */
+/* 170 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var Stack = __webpack_require__(116),
-	    equalArrays = __webpack_require__(146),
-	    equalByTag = __webpack_require__(151),
-	    equalObjects = __webpack_require__(156),
-	    getTag = __webpack_require__(86),
-	    isArray = __webpack_require__(76),
-	    isHostObject = __webpack_require__(90),
-	    isTypedArray = __webpack_require__(157);
+	var Stack = __webpack_require__(141),
+	    equalArrays = __webpack_require__(171),
+	    equalByTag = __webpack_require__(176),
+	    equalObjects = __webpack_require__(181),
+	    getTag = __webpack_require__(111),
+	    isArray = __webpack_require__(101),
+	    isHostObject = __webpack_require__(115),
+	    isTypedArray = __webpack_require__(182);
 
 	/** Used to compose bitmasks for comparison styles. */
 	var PARTIAL_COMPARE_FLAG = 2;
@@ -8936,11 +13927,11 @@
 
 
 /***/ },
-/* 146 */
+/* 171 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var SetCache = __webpack_require__(147),
-	    arraySome = __webpack_require__(150);
+	var SetCache = __webpack_require__(172),
+	    arraySome = __webpack_require__(175);
 
 	/** Used to compose bitmasks for comparison styles. */
 	var UNORDERED_COMPARE_FLAG = 1,
@@ -9023,12 +14014,12 @@
 
 
 /***/ },
-/* 147 */
+/* 172 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var MapCache = __webpack_require__(129),
-	    setCacheAdd = __webpack_require__(148),
-	    setCacheHas = __webpack_require__(149);
+	var MapCache = __webpack_require__(154),
+	    setCacheAdd = __webpack_require__(173),
+	    setCacheHas = __webpack_require__(174);
 
 	/**
 	 *
@@ -9056,7 +14047,7 @@
 
 
 /***/ },
-/* 148 */
+/* 173 */
 /***/ function(module, exports) {
 
 	/** Used to stand-in for `undefined` hash values. */
@@ -9081,7 +14072,7 @@
 
 
 /***/ },
-/* 149 */
+/* 174 */
 /***/ function(module, exports) {
 
 	/**
@@ -9101,7 +14092,7 @@
 
 
 /***/ },
-/* 150 */
+/* 175 */
 /***/ function(module, exports) {
 
 	/**
@@ -9130,14 +14121,14 @@
 
 
 /***/ },
-/* 151 */
+/* 176 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var Symbol = __webpack_require__(152),
-	    Uint8Array = __webpack_require__(153),
-	    equalArrays = __webpack_require__(146),
-	    mapToArray = __webpack_require__(154),
-	    setToArray = __webpack_require__(155);
+	var Symbol = __webpack_require__(177),
+	    Uint8Array = __webpack_require__(178),
+	    equalArrays = __webpack_require__(171),
+	    mapToArray = __webpack_require__(179),
+	    setToArray = __webpack_require__(180);
 
 	/** Used to compose bitmasks for comparison styles. */
 	var UNORDERED_COMPARE_FLAG = 1,
@@ -9250,10 +14241,10 @@
 
 
 /***/ },
-/* 152 */
+/* 177 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var root = __webpack_require__(93);
+	var root = __webpack_require__(118);
 
 	/** Built-in value references. */
 	var Symbol = root.Symbol;
@@ -9262,10 +14253,10 @@
 
 
 /***/ },
-/* 153 */
+/* 178 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var root = __webpack_require__(93);
+	var root = __webpack_require__(118);
 
 	/** Built-in value references. */
 	var Uint8Array = root.Uint8Array;
@@ -9274,7 +14265,7 @@
 
 
 /***/ },
-/* 154 */
+/* 179 */
 /***/ function(module, exports) {
 
 	/**
@@ -9298,7 +14289,7 @@
 
 
 /***/ },
-/* 155 */
+/* 180 */
 /***/ function(module, exports) {
 
 	/**
@@ -9322,11 +14313,11 @@
 
 
 /***/ },
-/* 156 */
+/* 181 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseHas = __webpack_require__(69),
-	    keys = __webpack_require__(68);
+	var baseHas = __webpack_require__(94),
+	    keys = __webpack_require__(93);
 
 	/** Used to compose bitmasks for comparison styles. */
 	var PARTIAL_COMPARE_FLAG = 2;
@@ -9411,11 +14402,11 @@
 
 
 /***/ },
-/* 157 */
+/* 182 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isLength = __webpack_require__(58),
-	    isObjectLike = __webpack_require__(66);
+	var isLength = __webpack_require__(83),
+	    isObjectLike = __webpack_require__(91);
 
 	/** `Object#toString` result references. */
 	var argsTag = '[object Arguments]',
@@ -9497,11 +14488,11 @@
 
 
 /***/ },
-/* 158 */
+/* 183 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isStrictComparable = __webpack_require__(159),
-	    keys = __webpack_require__(68);
+	var isStrictComparable = __webpack_require__(184),
+	    keys = __webpack_require__(93);
 
 	/**
 	 * Gets the property names, values, and compare flags of `object`.
@@ -9527,10 +14518,10 @@
 
 
 /***/ },
-/* 159 */
+/* 184 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isObject = __webpack_require__(57);
+	var isObject = __webpack_require__(82);
 
 	/**
 	 * Checks if `value` is suitable for strict equality comparisons, i.e. `===`.
@@ -9548,7 +14539,7 @@
 
 
 /***/ },
-/* 160 */
+/* 185 */
 /***/ function(module, exports) {
 
 	/**
@@ -9574,16 +14565,16 @@
 
 
 /***/ },
-/* 161 */
+/* 186 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseIsEqual = __webpack_require__(144),
-	    get = __webpack_require__(162),
-	    hasIn = __webpack_require__(171),
-	    isKey = __webpack_require__(169),
-	    isStrictComparable = __webpack_require__(159),
-	    matchesStrictComparable = __webpack_require__(160),
-	    toKey = __webpack_require__(170);
+	var baseIsEqual = __webpack_require__(169),
+	    get = __webpack_require__(187),
+	    hasIn = __webpack_require__(196),
+	    isKey = __webpack_require__(194),
+	    isStrictComparable = __webpack_require__(184),
+	    matchesStrictComparable = __webpack_require__(185),
+	    toKey = __webpack_require__(195);
 
 	/** Used to compose bitmasks for comparison styles. */
 	var UNORDERED_COMPARE_FLAG = 1,
@@ -9613,10 +14604,10 @@
 
 
 /***/ },
-/* 162 */
+/* 187 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseGet = __webpack_require__(163);
+	var baseGet = __webpack_require__(188);
 
 	/**
 	 * Gets the value at `path` of `object`. If the resolved value is
@@ -9652,12 +14643,12 @@
 
 
 /***/ },
-/* 163 */
+/* 188 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var castPath = __webpack_require__(164),
-	    isKey = __webpack_require__(169),
-	    toKey = __webpack_require__(170);
+	var castPath = __webpack_require__(189),
+	    isKey = __webpack_require__(194),
+	    toKey = __webpack_require__(195);
 
 	/**
 	 * The base implementation of `_.get` without support for default values.
@@ -9683,11 +14674,11 @@
 
 
 /***/ },
-/* 164 */
+/* 189 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isArray = __webpack_require__(76),
-	    stringToPath = __webpack_require__(165);
+	var isArray = __webpack_require__(101),
+	    stringToPath = __webpack_require__(190);
 
 	/**
 	 * Casts `value` to a path array if it's not one.
@@ -9704,11 +14695,11 @@
 
 
 /***/ },
-/* 165 */
+/* 190 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var memoize = __webpack_require__(166),
-	    toString = __webpack_require__(167);
+	var memoize = __webpack_require__(191),
+	    toString = __webpack_require__(192);
 
 	/** Used to match property names within property paths. */
 	var rePropName = /[^.[\]]+|\[(?:(-?\d+(?:\.\d+)?)|(["'])((?:(?!\2)[^\\]|\\.)*?)\2)\]|(?=(\.|\[\])(?:\4|$))/g;
@@ -9735,10 +14726,10 @@
 
 
 /***/ },
-/* 166 */
+/* 191 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var MapCache = __webpack_require__(129);
+	var MapCache = __webpack_require__(154);
 
 	/** Used as the `TypeError` message for "Functions" methods. */
 	var FUNC_ERROR_TEXT = 'Expected a function';
@@ -9814,10 +14805,10 @@
 
 
 /***/ },
-/* 167 */
+/* 192 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseToString = __webpack_require__(168);
+	var baseToString = __webpack_require__(193);
 
 	/**
 	 * Converts `value` to a string. An empty string is returned for `null`
@@ -9848,11 +14839,11 @@
 
 
 /***/ },
-/* 168 */
+/* 193 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var Symbol = __webpack_require__(152),
-	    isSymbol = __webpack_require__(65);
+	var Symbol = __webpack_require__(177),
+	    isSymbol = __webpack_require__(90);
 
 	/** Used as references for various `Number` constants. */
 	var INFINITY = 1 / 0;
@@ -9885,11 +14876,11 @@
 
 
 /***/ },
-/* 169 */
+/* 194 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isArray = __webpack_require__(76),
-	    isSymbol = __webpack_require__(65);
+	var isArray = __webpack_require__(101),
+	    isSymbol = __webpack_require__(90);
 
 	/** Used to match property names within property paths. */
 	var reIsDeepProp = /\.|\[(?:[^[\]]*|(["'])(?:(?!\1)[^\\]|\\.)*?\1)\]/,
@@ -9920,10 +14911,10 @@
 
 
 /***/ },
-/* 170 */
+/* 195 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var isSymbol = __webpack_require__(65);
+	var isSymbol = __webpack_require__(90);
 
 	/** Used as references for various `Number` constants. */
 	var INFINITY = 1 / 0;
@@ -9947,11 +14938,11 @@
 
 
 /***/ },
-/* 171 */
+/* 196 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseHasIn = __webpack_require__(172),
-	    hasPath = __webpack_require__(173);
+	var baseHasIn = __webpack_require__(197),
+	    hasPath = __webpack_require__(198);
 
 	/**
 	 * Checks if `path` is a direct or inherited property of `object`.
@@ -9987,7 +14978,7 @@
 
 
 /***/ },
-/* 172 */
+/* 197 */
 /***/ function(module, exports) {
 
 	/**
@@ -10006,17 +14997,17 @@
 
 
 /***/ },
-/* 173 */
+/* 198 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var castPath = __webpack_require__(164),
-	    isArguments = __webpack_require__(74),
-	    isArray = __webpack_require__(76),
-	    isIndex = __webpack_require__(59),
-	    isKey = __webpack_require__(169),
-	    isLength = __webpack_require__(58),
-	    isString = __webpack_require__(77),
-	    toKey = __webpack_require__(170);
+	var castPath = __webpack_require__(189),
+	    isArguments = __webpack_require__(99),
+	    isArray = __webpack_require__(101),
+	    isIndex = __webpack_require__(84),
+	    isKey = __webpack_require__(194),
+	    isLength = __webpack_require__(83),
+	    isString = __webpack_require__(102),
+	    toKey = __webpack_require__(195);
 
 	/**
 	 * Checks if `path` exists on `object`.
@@ -10053,7 +15044,7 @@
 
 
 /***/ },
-/* 174 */
+/* 199 */
 /***/ function(module, exports) {
 
 	/**
@@ -10080,13 +15071,13 @@
 
 
 /***/ },
-/* 175 */
+/* 200 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseProperty = __webpack_require__(55),
-	    basePropertyDeep = __webpack_require__(176),
-	    isKey = __webpack_require__(169),
-	    toKey = __webpack_require__(170);
+	var baseProperty = __webpack_require__(80),
+	    basePropertyDeep = __webpack_require__(201),
+	    isKey = __webpack_require__(194),
+	    toKey = __webpack_require__(195);
 
 	/**
 	 * Creates a function that returns the value at `path` of a given object.
@@ -10118,10 +15109,10 @@
 
 
 /***/ },
-/* 176 */
+/* 201 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var baseGet = __webpack_require__(163);
+	var baseGet = __webpack_require__(188);
 
 	/**
 	 * A specialized version of `baseProperty` which supports deep paths.
@@ -10140,14 +15131,14 @@
 
 
 /***/ },
-/* 177 */
+/* 202 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
 	(function() {
 	  var XMLAttribute, create;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
 	  module.exports = XMLAttribute = (function() {
 	    function XMLAttribute(parent, name, value) {
@@ -10178,14 +15169,14 @@
 
 
 /***/ },
-/* 178 */
+/* 203 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
 	(function() {
 	  var XMLProcessingInstruction, create;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
 	  module.exports = XMLProcessingInstruction = (function() {
 	    function XMLProcessingInstruction(parent, target, value) {
@@ -10235,7 +15226,7 @@
 
 
 /***/ },
-/* 179 */
+/* 204 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
@@ -10244,9 +15235,9 @@
 	    extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
 	    hasProp = {}.hasOwnProperty;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
-	  XMLNode = __webpack_require__(84);
+	  XMLNode = __webpack_require__(109);
 
 	  module.exports = XMLCData = (function(superClass) {
 	    extend(XMLCData, superClass);
@@ -10290,7 +15281,7 @@
 
 
 /***/ },
-/* 180 */
+/* 205 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
@@ -10299,9 +15290,9 @@
 	    extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
 	    hasProp = {}.hasOwnProperty;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
-	  XMLNode = __webpack_require__(84);
+	  XMLNode = __webpack_require__(109);
 
 	  module.exports = XMLComment = (function(superClass) {
 	    extend(XMLComment, superClass);
@@ -10345,30 +15336,30 @@
 
 
 /***/ },
-/* 181 */
+/* 206 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
 	(function() {
 	  var XMLCData, XMLComment, XMLDTDAttList, XMLDTDElement, XMLDTDEntity, XMLDTDNotation, XMLDocType, XMLProcessingInstruction, create, isObject;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
-	  isObject = __webpack_require__(57);
+	  isObject = __webpack_require__(82);
 
-	  XMLCData = __webpack_require__(179);
+	  XMLCData = __webpack_require__(204);
 
-	  XMLComment = __webpack_require__(180);
+	  XMLComment = __webpack_require__(205);
 
-	  XMLDTDAttList = __webpack_require__(182);
+	  XMLDTDAttList = __webpack_require__(207);
 
-	  XMLDTDEntity = __webpack_require__(183);
+	  XMLDTDEntity = __webpack_require__(208);
 
-	  XMLDTDElement = __webpack_require__(184);
+	  XMLDTDElement = __webpack_require__(209);
 
-	  XMLDTDNotation = __webpack_require__(185);
+	  XMLDTDNotation = __webpack_require__(210);
 
-	  XMLProcessingInstruction = __webpack_require__(178);
+	  XMLProcessingInstruction = __webpack_require__(203);
 
 	  module.exports = XMLDocType = (function() {
 	    function XMLDocType(parent, pubID, sysID) {
@@ -10539,14 +15530,14 @@
 
 
 /***/ },
-/* 182 */
+/* 207 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
 	(function() {
 	  var XMLDTDAttList, create;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
 	  module.exports = XMLDTDAttList = (function() {
 	    function XMLDTDAttList(parent, elementName, attributeName, attributeType, defaultValueType, defaultValue) {
@@ -10613,16 +15604,16 @@
 
 
 /***/ },
-/* 183 */
+/* 208 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
 	(function() {
 	  var XMLDTDEntity, create, isObject;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
-	  isObject = __webpack_require__(57);
+	  isObject = __webpack_require__(82);
 
 	  module.exports = XMLDTDEntity = (function() {
 	    function XMLDTDEntity(parent, pe, name, value) {
@@ -10703,14 +15694,14 @@
 
 
 /***/ },
-/* 184 */
+/* 209 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
 	(function() {
 	  var XMLDTDElement, create;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
 	  module.exports = XMLDTDElement = (function() {
 	    function XMLDTDElement(parent, name, value) {
@@ -10755,14 +15746,14 @@
 
 
 /***/ },
-/* 185 */
+/* 210 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
 	(function() {
 	  var XMLDTDNotation, create;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
 	  module.exports = XMLDTDNotation = (function() {
 	    function XMLDTDNotation(parent, name, value) {
@@ -10817,7 +15808,7 @@
 
 
 /***/ },
-/* 186 */
+/* 211 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
@@ -10826,9 +15817,9 @@
 	    extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
 	    hasProp = {}.hasOwnProperty;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
-	  XMLNode = __webpack_require__(84);
+	  XMLNode = __webpack_require__(109);
 
 	  module.exports = XMLRaw = (function(superClass) {
 	    extend(XMLRaw, superClass);
@@ -10872,7 +15863,7 @@
 
 
 /***/ },
-/* 187 */
+/* 212 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.9.1
@@ -10881,9 +15872,9 @@
 	    extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
 	    hasProp = {}.hasOwnProperty;
 
-	  create = __webpack_require__(81);
+	  create = __webpack_require__(106);
 
-	  XMLNode = __webpack_require__(84);
+	  XMLNode = __webpack_require__(109);
 
 	  module.exports = XMLText = (function(superClass) {
 	    extend(XMLText, superClass);
@@ -10927,7 +15918,7 @@
 
 
 /***/ },
-/* 188 */
+/* 213 */
 /***/ function(module, exports, __webpack_require__) {
 
 	// Generated by CoffeeScript 1.10.0
@@ -10935,7 +15926,7 @@
 	  "use strict";
 	  var xml2js;
 
-	  xml2js = __webpack_require__(41);
+	  xml2js = __webpack_require__(67);
 
 	  exports.stripBOM = function(str) {
 	    if (str[0] === '\uFEFF') {
@@ -10949,7 +15940,7 @@
 
 
 /***/ },
-/* 189 */
+/* 214 */
 /***/ function(module, exports) {
 
 	// Generated by CoffeeScript 1.10.0
@@ -10989,7 +15980,7 @@
 
 
 /***/ },
-/* 190 */
+/* 215 */
 /***/ function(module, exports) {
 
 	module.exports = require("timers");
